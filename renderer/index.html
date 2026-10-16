@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:">
+    <title>AI File Renamer</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f7f7f5;
+            --fg: #1d1d1b;
+            --mut: #6b6b66;
+            --card: #fff;
+            --bd: #d9d9d2;
+            --ac: #2f5bea;
+            --acf: #fff;
+            --ok: #1a7f45;
+            --er: #c0392b
+        }
+
+        @media(prefers-color-scheme:dark) {
+            :root {
+                --bg: #151514;
+                --fg: #ecece8;
+                --mut: #9a9a93;
+                --card: #1f1f1d;
+                --bd: #34342f;
+                --ac: #6d8cff;
+                --acf: #10121a;
+                --ok: #4cc486;
+                --er: #ff7b6b
+            }
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 14px/1.5 -apple-system, system-ui, sans-serif;
+            padding: 20px
+        }
+
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            display: grid;
+            gap: 14px
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center
+        }
+
+        h1 {
+            font-size: 20px;
+            margin: 0
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--bd);
+            border-radius: 10px;
+            padding: 14px
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--mut);
+            display: block;
+            margin-bottom: 6px
+        }
+
+        input[type=text],
+        input[type=password] {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--bd);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--fg);
+            font: 13px ui-monospace, Menlo, monospace
+        }
+
+        button {
+            font: inherit;
+            font-size: 13px;
+            border: 1px solid var(--bd);
+            background: var(--bg);
+            color: var(--fg);
+            border-radius: 6px;
+            padding: 6px 10px;
+            cursor: pointer
+        }
+
+        button.pri {
+            background: var(--ac);
+            color: var(--acf);
+            border-color: var(--ac)
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: default
+        }
+
+        .chips,
+        .bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center
+        }
+
+        .chips {
+            margin-top: 8px
+        }
+
+        #drop {
+            border: 2px dashed var(--bd);
+            border-radius: 10px;
+            padding: 26px;
+            text-align: center;
+            color: var(--mut);
+            cursor: pointer
+        }
+
+        #drop.over {
+            border-color: var(--ac);
+            color: var(--fg)
+        }
+
+        #err {
+            border-color: var(--er)
+        }
+
+        #err b {
+            color: var(--er)
+        }
+
+        #err p {
+            margin: 6px 0 10px;
+            overflow-wrap: anywhere
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--bd);
+            vertical-align: middle
+        }
+
+        td.o {
+            max-width: 220px;
+            overflow-wrap: anywhere;
+            color: var(--mut)
+        }
+
+        .nm {
+            display: flex;
+            align-items: center;
+            gap: 4px
+        }
+
+        .nm span {
+            color: var(--mut);
+            font-family: ui-monospace, monospace
+        }
+
+        .st {
+            white-space: nowrap
+        }
+
+        .ok {
+            color: var(--ok)
+        }
+
+        .er {
+            color: var(--er)
+        }
+
+        .mut {
+            color: var(--mut)
+        }
+
+        #msg {
+            font-size: 13px;
+            color: var(--mut)
+        }
+
+        dialog {
+            background: var(--card);
+            color: var(--fg);
+            border: 1px solid var(--bd);
+            border-radius: 12px;
+            width: min(640px, 92vw);
+            padding: 18px
+        }
+
+        dialog::backdrop {
+            background: #0006
+        }
+
+        fieldset {
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            margin: 0 0 12px;
+            padding: 12px
+        }
+
+        legend {
+            padding: 0 6px;
+            color: var(--mut)
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin: 6px 0
+        }
+
+        .row .p {
+            flex: 1;
+            overflow-wrap: anywhere;
+            font: 12px ui-monospace, monospace;
+            color: var(--mut)
+        }
+
+        ol {
+            margin: 6px 0 0;
+            padding-left: 20px
+        }
+
+        code {
+            font: 12px ui-monospace, monospace;
+            background: var(--bg);
+            padding: 1px 4px;
+            border-radius: 4px
+        }
+
+        a {
+            color: var(--ac);
+            cursor: pointer
+        }
+
+        select,
+        textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--bd);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--fg);
+            font: 13px ui-monospace, Menlo, monospace;
+            resize: vertical
+        }
+
+        .grid2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px
+        }
+
+        .help {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            color: var(--mut);
+            font-size: 12.5px
+        }
+
+        .help li {
+            margin: 2px 0
+        }
+
+        .presetbar {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            margin-bottom: 10px
+        }
+
+        .presetbar>div:first-child {
+            flex: 1
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <header>
+            <h1>AI File Renamer</h1><button id="gear">Settings</button>
+        </header>
+        <div class="card">
+            <label for="tpl">Name template for this batch</label>
+            <input type="text" id="tpl" value="{date}-{entity}-{type}-{title}" spellcheck="false">
+            <div class="chips" id="chips"></div>
+            <ul class="help">
+                <li><code>{title}</code> &mdash; a short 2 to 5 word description of what the file is</li>
+                <li><code>{entity}</code> &mdash; the vendor, company, or person tied to the document, if any</li>
+                <li><code>{date}</code> &mdash; the document's date, formatted per the Date format option below</li>
+                <li><code>{type}</code> &mdash; the document type, like invoice, receipt, screenshot, or photo</li>
+            </ul>
+            <div class="grid2" style="margin-top:10px">
+                <div><label for="sep">Separator</label>
+                    <select id="sep">
+                        <option value="-">Hyphen ( - )</option>
+                        <option value="_">Underscore ( _ )</option>
+                        <option value=".">Period ( . )</option>
+                        <option value="">None</option>
+                    </select>
+                </div>
+                <div><label for="datefmt">Date format</label>
+                    <select id="datefmt">
+                        <option value="ymd">YYYY-MM-DD (2026-01-05)</option>
+                        <option value="mdy">MM-DD-YYYY (01-05-2026)</option>
+                        <option value="dmy">DD-MM-YYYY (05-01-2026)</option>
+                        <option value="compact">YYYYMMDD (20260105)</option>
+                        <option value="ym">YYYY-MM (2026-01)</option>
+                        <option value="y">YYYY (2026)</option>
+                    </select>
+                </div>
+            </div>
+            <label for="extra" style="margin-top:10px">Custom instructions for the AI (optional)</label>
+            <textarea id="extra" rows="2" spellcheck="false" placeholder="e.g. Use the client name from the letterhead, not the sender"></textarea>
+        </div>
+        <div id="drop">Drop files here or click to choose (PDF, PNG, JPG, JPEG, GIF)</div>
+        <input type="file" id="fi" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.gif">
+        <div class="card" id="err" hidden><b>Paused: an error stopped processing.</b>
+            <p id="errmsg"></p>
+            <div class="bar"><button id="zip2">Download completed files (ZIP)</button><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button></div>
+        </div>
+        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span></div>
+        <div class="card" id="tc" hidden style="overflow-x:auto">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Original</th>
+                        <th>New name (editable)</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="tb"></tbody>
+            </table>
+        </div>
+    </main>
+    <dialog id="dlg">
+        <h2 style="margin:0 0 12px;font-size:17px">Settings</h2>
+        <fieldset>
+            <legend>Engine</legend>
+            <label class="row"><input type="radio" name="prov" value="anthropic"> Anthropic API (120 second timeout per request)</label>
+            <label class="row"><input type="radio" name="prov" value="local"> Local model (runs on this Mac)</label>
+        </fieldset>
+        <fieldset>
+            <legend>Anthropic API</legend>
+            <label for="key">API key</label>
+            <div class="row"><input type="password" id="key" placeholder="sk-ant-..." autocomplete="off"><button id="ksave">Save</button><button id="kdel">Remove</button></div>
+            <div class="mut" id="keystat"></div>
+            <label for="model" style="margin-top:10px">Model</label><input type="text" id="model">
+        </fieldset>
+        <fieldset>
+            <legend>Naming presets</legend>
+            <div class="presetbar">
+                <div><label for="presetSel">Saved preset</label><select id="presetSel"></select></div>
+                <button id="presetSave">Save as new</button>
+                <button id="presetUpdate">Update</button>
+                <button id="presetDelete">Delete</button>
+            </div>
+            <div class="mut">Saves the template, separator, date format, and custom instructions from the main window.</div>
+        </fieldset>
+        <fieldset>
+            <legend>Local model</legend>
+            <div class="row"><button data-pick="localModel">Model (.gguf)</button><span class="p" id="lm"></span></div>
+            <div class="row"><button data-pick="localMmproj">Vision projector (mmproj .gguf)</button><span class="p" id="lp"></span></div>
+            <div class="row"><button data-pick="llamaServer">llama-server binary</button><span class="p" id="lb"></span></div>
+            <div style="margin-top:10px">Find models: <a id="hf">huggingface.co vision GGUF models</a>
+                <ol>
+                    <li>Install the engine once: <code>brew install llama.cpp</code></li>
+                    <li>Open the link, pick a model repo, then Files and versions.</li>
+                    <li>Download the main <code>.gguf</code> (a Q4_K_M file is a good start) and the matching <code>mmproj</code> <code>.gguf</code> from the same repo.</li>
+                    <li>Choose both files above. The first run takes a while to load the model.</li>
+                </ol>
+            </div>
+        </fieldset>
+        <div class="bar" style="justify-content:flex-end"><button class="pri" id="close">Done</button></div>
+    </dialog>
+    <script src="../node_modules/pdfjs-dist/build/pdf.min.js"></script>
+    <script src="../node_modules/jszip/dist/jszip.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
