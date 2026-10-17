@@ -1,6 +1,6 @@
 {
-    "name": "ai-file-renamer",
-    "productName": "AI File Renamer",
+    "name": "misnomer",
+    "productName": "Misnomer",
     "version": "1.0.0",
     "description": "Renames PDFs and images based on their content",
     "main": "main.js",
@@ -12,8 +12,8 @@
         "format": "prettier --write ."
     },
     "build": {
-        "appId": "com.example.aifilerenamer",
-        "productName": "AI File Renamer",
+        "appId": "com.example.misnomer",
+        "productName": "Misnomer",
         "files": [
             "main.js",
             "preload.js",

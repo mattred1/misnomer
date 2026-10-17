@@ -291,7 +291,7 @@ const SIPS = '/usr/bin/sips';
 function sipsToJpeg(buf) {
     return new Promise((resolve, reject) => {
         if (!fs.existsSync(SIPS)) return reject(new Error('TIFF and HEIC conversion needs macOS sips.'));
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'afr-'));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misnomer-'));
         const src = path.join(dir, 'input'), dst = path.join(dir, 'output.jpg');
         const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
         try { fs.writeFileSync(src, buf); } catch (e) { cleanup(); return reject(e); }
@@ -460,8 +460,23 @@ ipcMain.handle('open', (_e, url) => {
     } catch { /* ignore malformed urls */ }
 });
 
+// Settings used to live under the previous product name. Copy them over once so
+// renaming the app does not silently drop saved keys and presets.
+const LEGACY_APP_NAME = 'AI File Renamer';
+function migrateUserData() {
+    try {
+        const current = app.getPath('userData');
+        if (fs.existsSync(path.join(current, 'settings.json'))) return;
+        const legacy = path.join(app.getPath('appData'), LEGACY_APP_NAME, 'settings.json');
+        if (!fs.existsSync(legacy)) return;
+        fs.mkdirSync(current, { recursive: true });
+        fs.copyFileSync(legacy, path.join(current, 'settings.json'));
+    } catch { /* best effort; a fresh settings file is created on first save */ }
+}
+
 app.whenReady().then(() => {
-    const w = new BrowserWindow({ width: 980, height: 820, title: 'AI File Renamer', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    migrateUserData();
+    const w = new BrowserWindow({ width: 980, height: 820, title: 'Misnomer', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     w.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 });

@@ -1,4 +1,4 @@
-# AI File Renamer
+# Misnomer
 
 A small Electron desktop app that looks at your files and gives them meaningful, consistent names.
 
@@ -58,7 +58,7 @@ Text is capped at 12,000 characters per file before it goes into a prompt. Files
 
 ```bash
 git clone <your-repo-url>
-cd ai-file-renamer
+cd misnomer
 npm install
 npm start
 ```
