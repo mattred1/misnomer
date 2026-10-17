@@ -22,7 +22,10 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Custom instructions** — add free-text guidance per batch (e.g. "use the client name from the letterhead, not the sender").
 - **Presets** — save and switch between template + separator + date format + instructions + fields combinations.
 - **Safe output** — duplicate names within a batch are auto-suffixed (`-2`, `-3`) and illegal filename characters are stripped.
-- **Export** — save files one at a time, or download the whole batch as a ZIP.
+- **Export** — save a copy of a single row, or download the whole batch as a ZIP.
+- **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
+- **Undo** — every rename batch is recorded; walk the stack backwards to restore original names.
+- **Folder support** — drop a folder or use **Choose a folder…** and it is scanned recursively.
 - **Progress and cancel** — a running count of processed files, and a Cancel button that aborts the in-flight request.
 - **Pause/resume** — an error pauses the batch so you can skip the offending file and continue.
 - **Automatic retry** — rate limits and transient server errors (429, 5xx) are retried up to 3 times with exponential backoff and jitter before a row is marked failed.
@@ -68,12 +71,13 @@ npm start
 
 ### Using it
 
-1. Drop files onto the drop zone, or click it to browse.
+1. Drop files or a folder onto the drop zone, click it to browse, or use **Choose a folder…**. Folders are scanned recursively.
 2. Adjust the template, separator, date format, and any custom instructions.
 3. Click **Generate names**. Each row updates as it finishes.
-4. Edit any name you don't like, then hit **Save** on the row or **Download all (ZIP)**.
+4. Edit any name you don't like.
+5. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
 
-> **Note:** the app currently *saves a copy* to a location you choose — it does not rename files in place. In-place renaming is tracked in the roadmap.
+Renames are confirmed before anything happens and never overwrite an existing file: if the name is already taken in that folder, it gets a `-2`, `-3` suffix. **Undo rename** reverts the most recent batch and can be pressed repeatedly to walk back through the session.
 
 ## Naming template reference
 
@@ -95,12 +99,13 @@ npm run lint  # ESLint
 npm run format # Prettier, writes changes in place
 ```
 
-The logic worth testing lives in two dependency-free UMD modules that work in both the renderer and Node:
+The logic worth testing lives in three dependency-free UMD modules that work in both the renderer and Node:
 
 - `renderer/naming.js` — slugging, template filling, filename sanitizing, duplicate resolution
 - `renderer/extract.js` — pulling text out of Office/ebook/HTML/RTF files
+- `renderer/rename.js` — path handling, collision-aware rename planning, and undo replay
 
-Both are covered by `test/naming.test.js` and `test/extract.test.js`. Run the tests before changing either.
+Each is covered by its own test file. Run the tests before changing any of them.
 
 ## Building a distributable
 
@@ -119,10 +124,12 @@ renderer/
   index.html           Markup and all styling
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
+  rename.js            Path handling, rename planning, and undo replay
   app.js               UI state, drag-and-drop, PDF prep, batching, format conversion
 test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
+  rename.test.js       Unit tests for rename.js
 eslint.config.js       ESLint flat config
 ```
 
@@ -158,13 +165,13 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Template preview + validation** — shows the resulting filename and flags unknown `{placeholders}`
 - [x] **Progress indicator and cancel** — a "3 of 20" counter plus a Cancel button that aborts the in-flight request
 - [ ] **RAW camera formats** — the `sips` conversion path could cover `.cr2`, `.nef`, `.arw`, etc. on macOS
-- [ ] **True in-place rename** with `fs.rename`, preserving the source folder, plus collision handling
-- [ ] **Folder drag-and-drop** (recursive) — `add(e.dataTransfer.files)` drops folders today
-- [ ] **Undo** — remember original names and offer "Restore original names"
+- [x] **True in-place rename** with `fs.rename`, preserving the source folder, plus collision handling
+- [x] **Folder drag-and-drop** (recursive) — dropped folders and **Choose a folder…** are walked by the main process
+- [x] **Undo** — a session stack of rename batches, replayed in reverse with conflicts reported
 
 ### Tier 3 — Polish and distribution
 
-- [ ] **Disk-aware dedupe** — `names()` only dedupes within a batch and can still overwrite an existing file on Save
+- [x] **Disk-aware dedupe** — renames consult the target folder, so an existing file is never overwritten (exported copies still go through the OS save dialog)
 - [ ] **EXIF capture-date fallback** for photos with no visible date
 - [ ] **Thumbnail previews** in the results table
 - [ ] **Token/cost display** per batch for the Anthropic path
