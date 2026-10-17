@@ -33,6 +33,12 @@ const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', ...CANVAS_CONVERT, ...SI
 const OK_EXT = ['pdf', ...IMAGE_EXT, ...Extract.OK_EXT];
 const OK_HINT = 'PDF, images (PNG, JPG, GIF, WebP, BMP, ICO, SVG, AVIF, TIFF, HEIC), and text or Office files (TXT, MD, CSV, JSON, RTF, DOCX, XLSX, PPTX, ODT, EPUB)';
 
+// Thumbnails stay small and are generated a few at a time, so dropping a large
+// batch does not kick off hundreds of simultaneous decodes.
+const THUMB_MAX = 120, THUMB_WORKERS = 3;
+const thumbCache = new Map(), thumbQueue = [];
+let thumbActive = 0, previewUrl = '';
+
 // Sample values used only to render the template preview, never sent anywhere.
 const SAMPLE = { date: '2026-03-01', entity: 'acme', type: 'invoice', title: 'march service call' };
 
@@ -105,9 +111,10 @@ async function addPaths(paths) {
 function row(f) {
     $('#tc').hidden = false;
     const tr = document.createElement('tr'); tr.id = 'r' + f.id;
-    tr.innerHTML = '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint"></div></td><td class="st"></td><td><button class="d">Save copy</button></td>';
-    tr.children[0].textContent = f.original;
-    tr.children[0].title = f.path;
+    tr.innerHTML = '<td><div class="thumb"><span>' + f.ext.toUpperCase() + '</span></div></td>'
+        + '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint"></div></td><td class="st"></td><td><button class="d">Save copy</button></td>';
+    tr.querySelector('.o').textContent = f.original;
+    tr.querySelector('.o').title = f.path;
     const inp = tr.querySelector('input'); inp.value = f.name;
     inp.oninput = () => { f.name = inp.value; f.edited = true; hints(); };
     tr.querySelector('.d').onclick = async () => {
@@ -115,7 +122,118 @@ function row(f) {
         if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
         save(fin(f), r.bytes);
     };
-    $('#tb').append(tr); paint(f);
+    $('#tb').append(tr); paint(f); queueThumb(f);
+}
+
+// A thumbnail is drawn from the file itself: PDFs render page one, sips formats are
+// converted first, and everything else is decoded by Chromium and scaled down.
+function queueThumb(f) {
+    if (f.ext !== 'pdf' && !IMAGE_EXT.includes(f.ext)) return;
+    thumbQueue.push(f);
+    pumpThumbs();
+}
+function pumpThumbs() {
+    while (thumbActive < THUMB_WORKERS && thumbQueue.length) {
+        const f = thumbQueue.shift();
+        thumbActive++;
+        thumbFor(f)
+            .then((src) => {
+                const box = document.querySelector('#r' + f.id + ' .thumb');
+                if (!box || !src) return;
+                box.textContent = '';
+                const img = document.createElement('img');
+                img.alt = '';
+                img.src = src;
+                img.title = 'Click to preview';
+                img.onclick = () => showPreview(f);
+                box.append(img);
+                box.classList.add('has');
+            })
+            .catch(() => { /* leave the extension badge in place */ })
+            .finally(() => { thumbActive--; pumpThumbs(); });
+    }
+}
+async function thumbFor(f) {
+    if (thumbCache.has(f.path)) return thumbCache.get(f.path);
+    let src = '';
+    const r = await api.readFile(f.path);
+    if (r.ok) {
+        if (f.ext === 'pdf') src = await pdfPreview(r.bytes, THUMB_MAX);
+        else if (SIPS_CONVERT.includes(f.ext)) {
+            const c = await api.convert(r.bytes);
+            if (c.ok) src = await imagePreview(new Blob([c.bytes], { type: 'image/jpeg' }), THUMB_MAX);
+        } else src = await imagePreview(new Blob([r.bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext }), THUMB_MAX);
+    }
+    thumbCache.set(f.path, src);
+    return src;
+}
+function pdfPreview(buf, max) {
+    let pdf;
+    return (async () => {
+        pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+        const page = await pdf.getPage(1);
+        const base = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: Math.min(1, max / Math.max(base.width, base.height)) });
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(vp.width));
+        c.height = Math.max(1, Math.round(vp.height));
+        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        return c.toDataURL('image/jpeg', 0.8);
+    })().catch(() => '').finally(() => { if (pdf) pdf.destroy(); });
+}
+async function imagePreview(blob, max) {
+    let bmp;
+    try { bmp = await createImageBitmap(blob); }
+    catch { return elementPreview(blob, max); }
+    try {
+        const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(bmp.width * scale));
+        c.height = Math.max(1, Math.round(bmp.height * scale));
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        return c.toDataURL('image/jpeg', 0.8);
+    } finally { if (bmp.close) bmp.close(); }
+}
+// Some decoders (SVG in particular) only work through an <img> element.
+function elementPreview(blob, max) {
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(blob), img = new Image();
+        img.onload = () => {
+            try {
+                const w = img.naturalWidth || max, h = img.naturalHeight || max;
+                const scale = Math.min(1, max / Math.max(w, h));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(w * scale));
+                c.height = Math.max(1, Math.round(h * scale));
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                resolve(c.toDataURL('image/jpeg', 0.8));
+            } catch { resolve(''); }
+            finally { URL.revokeObjectURL(url); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(''); };
+        img.src = url;
+    });
+}
+// Clicking a thumbnail opens a larger view of the same first page.
+async function showPreview(f) {
+    const img = $('#imgview');
+    $('#imgname').textContent = f.original;
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
+    img.removeAttribute('src');
+    const r = await api.readFile(f.path);
+    if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
+    let src = '';
+    if (f.ext === 'pdf') src = await pdfPreview(r.bytes, 1100);
+    else if (SIPS_CONVERT.includes(f.ext)) {
+        const c = await api.convert(r.bytes);
+        if (c.ok) { previewUrl = URL.createObjectURL(new Blob([c.bytes], { type: 'image/jpeg' })); src = previewUrl; }
+    } else {
+        previewUrl = URL.createObjectURL(new Blob([r.bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext }));
+        src = previewUrl;
+    }
+    if (!src) return;
+    img.src = src;
+    if (!$('#imgdlg').open) $('#imgdlg').showModal();
 }
 function paint(f) {
     const tr = $('#r' + f.id); if (!tr) return;
@@ -127,7 +245,14 @@ function paint(f) {
 const fin = (f) => names()[files.indexOf(f)];
 function hints() {
     const ns = names();
-    files.forEach((f, i) => { const h = document.querySelector('#r' + f.id + ' .hint'); if (h) h.textContent = ns[i] !== clean(f.name) + '.' + f.ext ? 'duplicate, saves as ' + ns[i] : ''; });
+    files.forEach((f, i) => {
+        const h = document.querySelector('#r' + f.id + ' .hint');
+        if (!h) return;
+        const notes = [];
+        if (ns[i] !== clean(f.name) + '.' + f.ext) notes.push('duplicate, saves as ' + ns[i]);
+        if (f.info && f.info.dateSource === 'exif') notes.push('date from EXIF');
+        h.textContent = notes.join(' \u00b7 ');
+    });
 }
 function sync() {
     const todo = files.some((f) => f.st !== 'done' && f.st !== 'skipped');
@@ -196,7 +321,7 @@ async function analyze(f) {
     const p = await prep(f);
     if (p.kind === 'text' && !p.text) throw new Error('No readable text found in this ' + f.ext.toUpperCase() + ' file.');
     const req = {
-        name: f.original, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
+        name: f.original, path: f.path, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
         fields: fieldDefs(), dateFormat: $('#datefmt').value, extra: $('#extra').value
     };
     // Providers that cannot take a PDF directly get page images from the renderer.
@@ -213,7 +338,13 @@ async function run() {
     const worker = async () => {
         for (let f; !halt && (f = q.shift());) {
             f.st = 'working'; paint(f); sync();
-            try { f.info = await analyze(f); if (!f.edited) f.name = build(f.info, $('#tpl').value, sep); f.st = 'done'; }
+            try {
+                f.info = await analyze(f);
+                // Surface where the date came from, since the model did not read it off the image.
+                if (f.info.dateSource === 'exif') f.note = 'Date taken from the photo\u2019s EXIF metadata';
+                if (!f.edited) f.name = build(f.info, $('#tpl').value, sep);
+                f.st = 'done';
+            }
             catch (e) {
                 // A cancelled file goes back in the queue rather than being marked failed.
                 if (cancelled) { f.st = 'queued'; f.note = ''; }
@@ -318,7 +449,11 @@ async function zipAll() {
     }
     save('renamed-files.zip', await z.generateAsync({ type: 'arraybuffer' }));
 }
-function clearAll() { files.length = 0; undoStack.length = 0; $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true; halt = false; haltFile = null; $('#msg').textContent = ''; sync(); }
+function clearAll() {
+    files.length = 0; undoStack.length = 0; thumbCache.clear(); thumbQueue.length = 0;
+    $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true;
+    halt = false; haltFile = null; $('#msg').textContent = ''; sync();
+}
 $('#go').onclick = $('#go2').onclick = run;
 $('#skip2').onclick = skipAndResume;
 $('#retry').onclick = $('#retry2').onclick = retryFailed;
@@ -327,6 +462,11 @@ $('#rename').onclick = renameAll;
 $('#undo').onclick = undoLast;
 $('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
+$('#imgclose').onclick = () => $('#imgdlg').close();
+$('#imgdlg').addEventListener('close', () => {
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
+    $('#imgview').removeAttribute('src');
+});
 $('#okhint').textContent = '(' + OK_HINT + ')';
 const drop = $('#drop'); drop.onclick = () => $('#fi').click();
 $('#pickFolder').onclick = async () => { const d = await api.pickFolder(); if (d) addPaths([d]); };

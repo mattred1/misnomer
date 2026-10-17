@@ -26,6 +26,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Safe output** — duplicate names within a batch are auto-suffixed (`-2`, `-3`) and illegal filename characters are stripped.
 - **Export** — save a copy of a single row, or download the whole batch as a ZIP.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
+- **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
+- **Thumbnail previews** — every image and PDF row shows a thumbnail of the first page; click it for a larger view.
 - **Undo** — every rename batch is recorded; walk the stack backwards to restore original names.
 - **Folder support** — drop a folder or use **Choose a folder…** and it is scanned recursively.
 - **Progress and cancel** — a running count of processed files, and a Cancel button that aborts the in-flight request.
@@ -46,6 +48,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 | Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text |
 
 Text is capped at 12,000 characters per file before it goes into a prompt. Files with any other extension are skipped, and the drop zone lists what was rejected.
+
+Photos with no printed or visible date fall back to the capture date stored in EXIF metadata. The reader handles JPEG, PNG, WebP, and TIFF directly, and scans other containers such as HEIC for the EXIF block. The model's date always wins when it can see one.
 
 ## Requirements
 
@@ -123,12 +127,13 @@ npm run lint  # ESLint
 npm run format # Prettier, writes changes in place
 ```
 
-The logic worth testing lives in four dependency-free UMD modules that work in both the renderer and Node:
+The logic worth testing lives in five dependency-free UMD modules that work in both the renderer and Node:
 
 - `renderer/naming.js` — slugging, template filling, filename sanitizing, duplicate resolution
 - `renderer/extract.js` — pulling text out of Office/ebook/HTML/RTF files
 - `renderer/rename.js` — path handling, collision-aware rename planning, and undo replay
 - `renderer/providers.js` — the provider registry, request shapes, model-catalogue parsing, and settings migration
+- `renderer/exif.js` — EXIF capture-date parsing and date-format rendering
 
 Each is covered by its own test file. Run the tests before changing any of them.
 
@@ -150,13 +155,15 @@ renderer/
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
   providers.js         Provider registry, request shapes, model parsing, settings migration
+  exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
   app.js               UI state, drag-and-drop, PDF prep, batching, format conversion
-test/
+ test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
   providers.test.js    Unit tests for providers.js
   rename.test.js       Unit tests for rename.js
+  exif.test.js         Unit tests for exif.js
 eslint.config.js       ESLint flat config
 ```
 
@@ -199,8 +206,8 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 ### Tier 3 — Polish and distribution
 
 - [x] **Disk-aware dedupe** — renames consult the target folder, so an existing file is never overwritten (exported copies still go through the OS save dialog)
-- [ ] **EXIF capture-date fallback** for photos with no visible date
-- [ ] **Thumbnail previews** in the results table
+- [x] **EXIF capture-date fallback** for photos with no visible date
+- [x] **Thumbnail previews** in the results table
 - [ ] **Token/cost display** per batch for the Anthropic path
 - [ ] **Accessibility pass** — `aria-live` on status updates, focus trap in the settings dialog
 - [ ] **Keyboard shortcuts**

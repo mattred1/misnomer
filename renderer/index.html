@@ -179,6 +179,45 @@
             color: var(--mut)
         }
 
+        .thumb {
+            width: 52px;
+            height: 52px;
+            border: 1px solid var(--bd);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--mut);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            font: 10px ui-monospace, Menlo, monospace
+        }
+
+        .thumb.has {
+            border-color: transparent
+        }
+
+        .thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            cursor: zoom-in
+        }
+
+        #imgdlg {
+            width: auto;
+            max-width: 94vw
+        }
+
+        #imgdlg img {
+            display: block;
+            max-width: 88vw;
+            max-height: 76vh;
+            margin: 0 auto;
+            border-radius: 8px
+        }
+
         .nm {
             display: flex;
             align-items: center;
@@ -381,6 +420,7 @@
             <table>
                 <thead>
                     <tr>
+                        <th>Preview</th>
                         <th>Original</th>
                         <th>New name (editable)</th>
                         <th>Status</th>
@@ -449,6 +489,11 @@
             </div>
         </fieldset>
         <div class="bar" style="justify-content:flex-end"><button class="pri" id="close">Done</button></div>
+    </dialog>
+    <dialog id="imgdlg">
+        <div class="mut" id="imgname" style="font:12px ui-monospace,monospace;margin-bottom:8px;overflow-wrap:anywhere"></div>
+        <img id="imgview" alt="">
+        <div class="bar" style="justify-content:flex-end;margin-top:10px"><button id="imgclose">Close</button></div>
     </dialog>
     <script src="../node_modules/pdfjs-dist/build/pdf.min.js"></script>
     <script src="../node_modules/jszip/dist/jszip.min.js"></script>

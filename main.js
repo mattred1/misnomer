@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os'), { spawn } = require('child_process');
 const { LIST: PROVIDERS, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings } = require('./renderer/providers.js');
+const Exif = require('./renderer/exif.js');
 
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
@@ -274,12 +275,28 @@ async function local(s, req, signal) {
 
 // Track in-flight requests so the renderer's Cancel button can abort them.
 const inflight = new Set();
+// A photo often shows no printed date, but the camera recorded one when it was taken.
+// The renderer sends the original path so this still works for formats it converted
+// to JPEG before the request (TIFF/HEIC, canvas re-encodes), whose EXIF would be lost.
+function captureDate(filePath, dateFormat) {
+    if (!filePath) return '';
+    try { return Exif.formatDate(Exif.exifDate(fs.readFileSync(filePath)), dateFormat); }
+    catch { return ''; }
+}
 ipcMain.handle('analyze', async (_e, req) => {
     const s = read();
     const ctl = new AbortController();
     inflight.add(ctl);
     req = { ...req, dateHint: DATE_HINTS[req.dateFormat] || DEFAULT_DATE_HINT };
-    try { return { ok: true, info: await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal))) }; }
+    try {
+        const info = await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)));
+        // Only fill a date the model left empty; a visible printed date always wins.
+        if (req.kind === 'image' && !info.date) {
+            const taken = captureDate(req.path, req.dateFormat);
+            if (taken) { info.date = taken; info.dateSource = 'exif'; }
+        }
+        return { ok: true, info };
+    }
     catch (e) { return { ok: false, error: e.message }; }
     finally { inflight.delete(ctl); }
 });
