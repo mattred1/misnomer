@@ -17,9 +17,12 @@ function retext(oldSep, newSep) {
 }
 
 // Naming helpers live in naming.js so they can be unit tested with `node --test`.
-const { build, clean, extOf, placeholders } = window.Naming;
+const { build, clean, placeholders } = window.Naming;
 const names = () => window.Naming.names(files);
 const Extract = window.Extract;
+const Rename = window.Rename;
+// One entry per applied rename batch; Undo walks this stack backwards.
+const undoStack = [];
 
 const RESERVED_KEYS = ['title', 'entity', 'date', 'type'];
 // Chromium can decode these but the model APIs reject them, so they go through a canvas.
@@ -76,31 +79,48 @@ function preview() {
     $('#pvnote').className = unknown.length ? 'mut bad' : 'mut';
 }
 
-function add(list) {
+// Files are tracked by path so they can be renamed in place. Drops and the file
+// picker only hand us File objects, so their real paths come from Electron.
+async function addPaths(paths) {
+    const list = (paths || []).filter(Boolean);
+    if (!list.length) { $('#msg').textContent = 'That item has no location on disk.'; return; }
+    const r = await api.expand(list);
+    if (!r.ok) { $('#msg').textContent = 'Could not read that folder: ' + r.error; return; }
     const rejected = [];
-    for (const file of list) {
-        const ext = extOf(file.name);
-        if (!OK_EXT.includes(ext)) { rejected.push(file.name); continue; }
-        const f = { id: ++uid, file, ext, name: file.name.replace(/\.[^.]+$/, ''), st: 'queued', note: '' };
+    for (const file of r.files) {
+        if (!OK_EXT.includes(file.ext)) { rejected.push(file.name); continue; }
+        const f = {
+            id: ++uid, path: file.path, dir: file.dir, ext: file.ext,
+            original: file.name, name: file.name.replace(/\.[^.]+$/, ''), st: 'queued', note: '', renamed: false
+        };
         files.push(f); row(f);
     }
-    $('#msg').textContent = rejected.length ? 'Unsupported, skipped: ' + rejected.join(', ') : '';
+    const notes = [];
+    if (!r.files.length) notes.push('No files found here.');
+    if (rejected.length) notes.push('Unsupported, skipped: ' + rejected.join(', '));
+    if (r.truncated) notes.push('That folder is very large, so only the first batch was added.');
+    $('#msg').textContent = notes.join(' ');
     sync();
 }
 function row(f) {
     $('#tc').hidden = false;
     const tr = document.createElement('tr'); tr.id = 'r' + f.id;
-    tr.innerHTML = '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint"></div></td><td class="st"></td><td><button class="d">Save</button></td>';
-    tr.children[0].textContent = f.file.name;
+    tr.innerHTML = '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint"></div></td><td class="st"></td><td><button class="d">Save copy</button></td>';
+    tr.children[0].textContent = f.original;
+    tr.children[0].title = f.path;
     const inp = tr.querySelector('input'); inp.value = f.name;
     inp.oninput = () => { f.name = inp.value; f.edited = true; hints(); };
-    tr.querySelector('.d').onclick = async () => save(fin(f), await f.file.arrayBuffer());
+    tr.querySelector('.d').onclick = async () => {
+        const r = await api.readFile(f.path);
+        if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
+        save(fin(f), r.bytes);
+    };
     $('#tb').append(tr); paint(f);
 }
 function paint(f) {
     const tr = $('#r' + f.id); if (!tr) return;
     const inp = tr.querySelector('input'); if (document.activeElement !== inp) inp.value = f.name;
-    const lab = f.st === 'queued' && halt && !cancelled ? ['Paused', 'mut'] : { queued: ['Queued', 'mut'], working: ['Reading...', 'mut'], done: ['Done', 'ok'], error: ['Failed', 'er'], skipped: ['Skipped', 'mut'] }[f.st];
+    const lab = f.st === 'queued' && halt && !cancelled ? ['Paused', 'mut'] : (f.st === 'done' && f.renamed ? ['Renamed', 'ok'] : { queued: ['Queued', 'mut'], working: ['Reading...', 'mut'], done: ['Done', 'ok'], error: ['Failed', 'er'], skipped: ['Skipped', 'mut'] }[f.st]);
     const s = tr.querySelector('.st'); s.className = 'st ' + lab[1]; s.textContent = lab[0]; s.title = f.note;
     tr.querySelector('.d').disabled = f.st === 'working';
 }
@@ -117,6 +137,9 @@ function sync() {
     $('#clr').disabled = busy || !files.length; $('#clr2').disabled = busy;
     const anyErr = files.some((f) => f.st === 'error');
     $('#retry').disabled = busy || !anyErr; $('#retry2').disabled = busy || !anyErr;
+    $('#rename').disabled = busy || !files.some((f) => f.st === 'done');
+    $('#undo').disabled = busy || !undoStack.length;
+    $('#undo').textContent = undoStack.length ? 'Undo rename (' + undoStack.length + ')' : 'Undo rename';
     $('#cancel').hidden = !busy;
     const finished = files.filter((f) => f.st === 'done' || f.st === 'error' || f.st === 'skipped').length;
     $('#prog').textContent = busy && files.length ? finished + ' of ' + files.length + ' processed' : '';
@@ -150,8 +173,12 @@ async function toImage(blob) {
     if (!out) throw new Error('Could not convert the image to JPEG.');
     return out.arrayBuffer();
 }
+// MIME type for the canvas decode path; SVG and ICO need their real type to decode.
+const BLOB_TYPE = { svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp', avif: 'image/avif' };
 async function prep(f) {
-    const bytes = await f.file.arrayBuffer();
+    const read = await api.readFile(f.path);
+    if (!read.ok) throw new Error(read.error);
+    const bytes = read.bytes;
     if (f.ext === 'pdf') return { kind: 'document', bytes };
     if (Extract.OK_EXT.includes(f.ext)) return { kind: 'text', text: await Extract.extractText(f.ext, bytes) };
     if (SIPS_CONVERT.includes(f.ext)) {
@@ -159,14 +186,17 @@ async function prep(f) {
         if (!r.ok) throw new Error(r.error);
         return { kind: 'image', ext: 'jpg', bytes: r.bytes };
     }
-    if (CANVAS_CONVERT.includes(f.ext)) return { kind: 'image', ext: 'jpg', bytes: await toImage(f.file) };
+    if (CANVAS_CONVERT.includes(f.ext)) {
+        const blob = new Blob([bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext });
+        return { kind: 'image', ext: 'jpg', bytes: await toImage(blob) };
+    }
     return { kind: 'image', ext: f.ext, bytes };
 }
 async function analyze(f) {
     const p = await prep(f);
     if (p.kind === 'text' && !p.text) throw new Error('No readable text found in this ' + f.ext.toUpperCase() + ' file.');
     const req = {
-        name: f.file.name, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
+        name: f.original, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
         fields: fieldDefs(), dateFormat: $('#datefmt').value, extra: $('#extra').value
     };
     // Only the local engine needs pages rendered; the API reads PDFs directly.
@@ -189,7 +219,7 @@ async function run() {
                 if (cancelled) { f.st = 'queued'; f.note = ''; }
                 else {
                     f.st = 'error'; f.note = e.message;
-                    if (!halt) { halt = true; haltFile = f; $('#errmsg').textContent = f.file.name + ': ' + e.message; $('#err').hidden = false; }
+                    if (!halt) { halt = true; haltFile = f; $('#errmsg').textContent = f.original + ': ' + e.message; $('#err').hidden = false; }
                 }
             }
             paint(f); sync();
@@ -213,24 +243,98 @@ function retryFailed() {
     files.forEach((f) => { if (f.st === 'error') { f.st = 'queued'; f.note = ''; paint(f); } });
     run();
 }
+// Renames every finished row inside its own folder. Collisions are resolved against
+// what is already on disk, and the batch is recorded so it can be undone.
+async function renameAll() {
+    const rows = files.filter((f) => f.st === 'done');
+    if (!rows.length) return;
+    const existing = await api.existing(Rename.dirsOf(rows.map((f) => f.path)));
+    const plan = Rename.planRenames(rows.map((f) => ({ id: f.id, from: f.path, name: clean(f.name), ext: f.ext })), existing);
+    const todo = plan.filter((p) => p.changed);
+    if (!todo.length) { $('#msg').textContent = 'Every file already has the name shown.'; return; }
+
+    const dirs = [...new Set(todo.map((p) => p.dir))];
+    const where = dirs.length === 1 ? dirs[0] : dirs.length + ' folders';
+    const plural = todo.length === 1 ? '' : 's';
+    if (!window.confirm('Rename ' + todo.length + ' file' + plural + ' in ' + where + '?')) return;
+
+    const results = await api.rename(todo.map((p) => ({ id: p.id, from: p.from, to: p.path })));
+    const entries = [], failed = [];
+    for (const r of results) {
+        const p = todo.find((x) => x.id === r.id), f = files.find((x) => x.id === r.id);
+        if (!p || !f) continue;
+        if (r.ok) {
+            entries.push({ id: f.id, from: p.from, to: p.path });
+            f.path = p.path; f.dir = p.dir; f.original = p.target; f.renamed = true; f.note = '';
+        } else {
+            failed.push(f.original + ': ' + r.error);
+            f.note = r.error;
+        }
+    }
+    if (entries.length) undoStack.push({ entries });
+    $('#msg').textContent = (entries.length ? 'Renamed ' + entries.length + ' file' + (entries.length === 1 ? '' : 's') + '.' : '')
+        + (failed.length ? ' Failed: ' + failed.join('; ') : '');
+    files.forEach(paint); sync();
+}
+// Reverts the most recent rename batch, unwinding its entries in reverse order.
+async function undoLast() {
+    const batch = undoStack.pop();
+    if (!batch) return;
+    const existing = await api.existing(Rename.dirsOf(batch.entries.map((e) => e.to)));
+    const plan = Rename.planUndo(batch.entries, existing);
+    const ok = plan.filter((p) => p.ok);
+    const results = ok.length ? await api.rename(ok.map((p) => ({ id: p.id, from: p.from, to: p.to }))) : [];
+    const failedIds = results.filter((r) => !r.ok).map((r) => r.id);
+    let restored = 0;
+    for (const r of results) {
+        const p = ok.find((x) => x.id === r.id), f = files.find((x) => x.id === r.id);
+        if (!p || !f) continue;
+        if (r.ok) {
+            restored++;
+            f.path = p.to; f.dir = Rename.dirOf(p.to); f.original = Rename.baseOf(p.to);
+            f.renamed = false; f.note = '';
+        } else { f.note = r.error; }
+    }
+    // Anything that could not be moved back stays on the stack for another attempt.
+    const retry = plan.filter((p) => p.ok && failedIds.includes(p.id)).map((p) => ({ id: p.id, from: p.to, to: p.from }));
+    if (retry.length) undoStack.push({ entries: retry });
+
+    const blocked = plan.filter((p) => !p.ok);
+    const notes = [];
+    if (restored) notes.push('Restored ' + restored + ' original name' + (restored === 1 ? '' : 's') + '.');
+    if (failedIds.length) notes.push(failedIds.length + ' could not be restored.');
+    if (blocked.length) notes.push(blocked.length + ' skipped: the original name is taken or the file is gone.');
+    if (!notes.length) notes.push('Nothing to undo.');
+    $('#msg').textContent = notes.join(' ');
+    files.forEach(paint); sync();
+}
 async function zipAll() {
     const z = new JSZip(), ns = names();
-    files.forEach((f, i) => { if (f.st === 'done') z.file(ns[i], f.file); });
+    for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (f.st !== 'done') continue;
+        const r = await api.readFile(f.path);
+        if (r.ok) z.file(ns[i], r.bytes);
+    }
     save('renamed-files.zip', await z.generateAsync({ type: 'arraybuffer' }));
 }
-function clearAll() { files.length = 0; $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true; halt = false; haltFile = null; $('#msg').textContent = ''; sync(); }
+function clearAll() { files.length = 0; undoStack.length = 0; $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true; halt = false; haltFile = null; $('#msg').textContent = ''; sync(); }
 $('#go').onclick = $('#go2').onclick = run;
 $('#skip2').onclick = skipAndResume;
 $('#retry').onclick = $('#retry2').onclick = retryFailed;
 $('#cancel').onclick = cancelRun;
+$('#rename').onclick = renameAll;
+$('#undo').onclick = undoLast;
 $('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
 $('#okhint').textContent = '(' + OK_HINT + ')';
 const drop = $('#drop'); drop.onclick = () => $('#fi').click();
-$('#fi').onchange = (e) => { add(e.target.files); e.target.value = ''; };
+$('#pickFolder').onclick = async () => { const d = await api.pickFolder(); if (d) addPaths([d]); };
+$('#fi').onchange = (e) => { addPaths([...e.target.files].map((f) => api.pathFor(f))); e.target.value = ''; };
 ['dragover', 'dragenter'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', (e) => add(e.dataTransfer.files));
+// Dropped folders arrive as File entries too; files:expand walks them recursively.
+drop.addEventListener('drop', (e) => addPaths([...e.dataTransfer.files].map((f) => api.pathFor(f))));
 
 function applyPreset(p) {
     $('#tpl').value = p.template; $('#sep').value = p.sep; $('#datefmt').value = p.dateFormat; $('#extra').value = p.extra || '';

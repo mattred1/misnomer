@@ -349,13 +349,14 @@
             <label for="extra" style="margin-top:10px">Custom instructions for the AI (optional)</label>
             <textarea id="extra" rows="2" spellcheck="false" placeholder="e.g. Use the client name from the letterhead, not the sender"></textarea>
         </div>
-        <div id="drop">Drop files here or click to choose <span id="okhint"></span></div>
+        <div class="bar" style="margin-bottom:8px"><button id="pickFolder">Choose a folder&hellip;</button><span class="mut" style="font-size:13px">Folders are scanned recursively.</span></div>
+        <div id="drop">Drop files or folders here, or click to choose files <span id="okhint"></span></div>
         <input type="file" id="fi" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.ico,.svg,.avif">
         <div class="card" id="err" hidden><b>Paused: an error stopped processing.</b>
             <p id="errmsg"></p>
             <div class="bar"><button id="zip2">Download completed files (ZIP)</button><button id="retry2" disabled>Retry failed</button><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button></div>
         </div>
-        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="retry" disabled>Retry failed</button><button id="cancel" hidden>Cancel</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span><span id="prog" class="mut"></span></div>
+        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="retry" disabled>Retry failed</button><button id="cancel" hidden>Cancel</button><button class="pri" id="rename" disabled>Rename in place</button><button id="undo" disabled>Undo rename</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span><span id="prog" class="mut"></span></div>
         <div class="card" id="tc" hidden style="overflow-x:auto">
             <table>
                 <thead>
@@ -420,6 +421,7 @@
     <script src="../node_modules/jszip/dist/jszip.min.js"></script>
     <script src="naming.js"></script>
     <script src="extract.js"></script>
+    <script src="rename.js"></script>
     <script src="app.js"></script>
 </body>
 
