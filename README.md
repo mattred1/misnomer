@@ -2,7 +2,7 @@
 
 A small Electron desktop app that looks at your files and gives them meaningful, consistent names.
 
-Drop in a batch of documents and images, pick a naming template, and the app reads each file with a vision model and proposes a name built from what it actually sees: an invoice from Acme dated 2026-03-01 becomes `2026-03-01-acme-invoice-march-service-call`.
+Drop in a batch of documents and images, pick a naming template, and the app reads each file with a vision model and proposes a name built from what it actually sees. For example, with a template like `{date}-{entity}-{type}-{title}`, an invoice from Acme dated 2026-03-01 becomes `2026-03-01-acme-invoice-march-service-call`.
 
 Everything runs locally except the files you send to a cloud model. Your API key is stored encrypted in the OS keychain via Electron's `safeStorage`, never in plain text.
 
@@ -10,7 +10,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 
 ## Current features
 
-- **Batch processing** — drop a folder's worth of files at once, watch per-file status, and fix any name inline before saving.
+- **Batch processing** — drop a folder's worth of files at once, watch per-file status with a batch progress bar, and fix any name inline before saving. The action bar and table header stay pinned while long batches scroll.
+- **Light and dark themes** — choose **Auto** (follow the system setting, the default), **Light**, or **Dark** in Settings; the choice is saved with the rest of the app settings.
 - **Two engines**
   - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
   - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
@@ -18,8 +19,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
 - **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
 - **Usage and cost** — every engine reports input and output token counts, totalled across the batch, with an estimated cost when the selected model has a known list price. Local runs show no API cost.
-- **Naming templates** — compose names from `{date}`, `{entity}`, `{type}`, and `{title}` with a configurable separator, plus any custom fields you define.
-- **Live template preview** — see the filename your template produces, with unknown placeholders flagged and the sample date rendered in the selected date format.
+- **Naming templates** — compose names from `{date}`, `{entity}`, `{type}`, and `{title}` with a configurable separator, plus any custom fields you define. New installs start with just `{title}`; add fields as needed.
+- **Live template preview** — see the filename your template produces as color-coded tokens, with unknown placeholders flagged and the sample date rendered in the selected date format.
 - **Date formats** — `YYYY-MM-DD`, `MM-DD-YYYY`, `DD-MM-YYYY`, `YYYYMMDD`, `YYYY-MM`, or `YYYY`.
 - **Custom fields** — define your own values (e.g. `amount`, `category`) and use them as template placeholders; the request schema is generated to match.
 - **Custom instructions** — add free-text guidance per batch (e.g. "use the client name from the letterhead, not the sender").
@@ -28,11 +29,11 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Export** — save a copy of a single row, or download the whole batch as a ZIP.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
 - **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
-- **Thumbnail previews** — every image and PDF row shows a thumbnail of its first page, generated only when the row scrolls into view and cached for reuse. Click or press Enter for a larger view; text and Office rows show a file-type badge.
+- **Thumbnail previews** — every image and PDF row shows a thumbnail of its first page, generated only when the row scrolls into view and cached for reuse. Hover for the original filename, and click or press Enter for a larger view; text and Office rows show a file-type badge.
 - **Responsive on large batches** — folder scans, file reads, saves, and format conversions run asynchronously in the main process, and thumbnails decode a few at a time instead of all at once.
 - **Keyboard and screen-reader friendly** — visible focus rings, a keyboard-operable drop zone and previews, labelled dialogs, and polite live announcements for status and progress.
 - **Undo** — every rename batch is recorded; walk the stack backwards to restore original names.
-- **Folder support** — drop a folder or use **Choose a folder…** and it is scanned recursively in the background while the window stays responsive.
+- **Folder support** — drop files or folders anywhere in the window, or use **Choose a folder…**, and folders are scanned recursively in the background while the window stays responsive. The empty state previews the filename your current template will produce.
 - **Progress and cancel** — a running count of processed files, and a Cancel button that aborts the in-flight request.
 - **Pause/resume** — an error pauses the batch so you can skip the offending file and continue.
 - **Automatic retry** — rate limits and transient server errors (429, 5xx) are retried up to 3 times with exponential backoff and jitter before a row is marked failed.
@@ -80,7 +81,7 @@ npm start
    - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
    - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
 4. For **Local model**, choose the model `.gguf`, the `mmproj` `.gguf`, and (optionally) the `llama-server` binary. If the binary lives in Homebrew's standard location, it is auto-detected.
-5. Click **Done**. Settings persist to your Electron `userData` directory.
+5. Click **Done**, press Esc, or click anywhere outside the dialog to close it. Settings persist to your Electron `userData` directory.
 
 ## Supported providers
 
@@ -118,6 +119,16 @@ GitHub disables scheduled workflows after 60 days without repository activity. I
 6. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
 
 Renames are confirmed before anything happens and never overwrite an existing file: if the name is already taken in that folder, it gets a `-2`, `-3` suffix. **Undo rename** reverts the most recent batch and can be pressed repeatedly to walk back through the session.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+,` / `Ctrl+,` | Open Settings |
+| `Cmd+O` / `Ctrl+O` | Add files |
+| `Cmd+Enter` / `Ctrl+Enter` | Generate names |
+| `Cmd+Option+Z` / `Ctrl+Alt+Z` | Undo the last rename, when focus is not in a text field |
+| `Esc` | Cancel a running batch, when focus is not in a text field |
 
 ## Naming template reference
 

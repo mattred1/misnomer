@@ -4,7 +4,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = '../node_modules/pdfjs-dist/build/pdf.w
 
 // The <option value="..."> ids in the #datefmt select must match main.js's DATE_HINTS keys -
 // the hint text itself lives there since that's what actually goes into the model prompt / schema.
-const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
+// The starter preset keeps the first run simple: a single title placeholder.
+const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
+// Older builds seeded first-run settings with the four built-in fields; loadS upgrades
+// the untouched starter preset so existing installs pick up the simpler default.
+const LEGACY_DEFAULT_TEMPLATE = '{date}-{entity}-{type}-{title}';
 let presets = [DEFAULT_PRESET], activePreset = 'default', lastSep = DEFAULT_PRESET.sep;
 
 // Rewrites the separator characters already visible in the template input so the raw text
@@ -17,7 +21,7 @@ function retext(oldSep, newSep) {
 }
 
 // Naming helpers live in naming.js so they can be unit tested with `node --test`.
-const { build, clean, placeholders } = window.Naming;
+const { build, clean, placeholders, slug } = window.Naming;
 const names = () => window.Naming.names(files);
 const Extract = window.Extract;
 const Rename = window.Rename;
@@ -83,11 +87,17 @@ function renderChips() {
     $('#chips').innerHTML = '';
     for (const k of keys) {
         const b = document.createElement('button'); b.textContent = '{' + k + '}';
-        b.onclick = () => { const v = $('#tpl').value, sep = $('#sep').value; $('#tpl').value = v + (v.endsWith(sep) ? '' : sep) + '{' + k + '}'; retpl(); };
+        b.onclick = () => {
+            const v = $('#tpl').value.trim(), sep = $('#sep').value;
+            // A separator only belongs between fields, never before the first one.
+            $('#tpl').value = v ? v + (v.endsWith(sep) ? '' : sep) + '{' + k + '}' : '{' + k + '}';
+            retpl();
+        };
         $('#chips').append(b);
     }
 }
 // Shows what the template produces with sample data, and flags placeholders no field will fill.
+// The result is drawn as coloured tokens so each placeholder's contribution is easy to scan.
 function preview() {
     const t = $('#tpl').value, sep = $('#sep').value, defs = fieldDefs();
     const used = placeholders(t), known = RESERVED_KEYS.concat(defs.map((f) => f.key));
@@ -95,7 +105,41 @@ function preview() {
     const custom = used.filter((k) => !RESERVED_KEYS.includes(k));
     const sample = { ...SAMPLE, date: Exif.formatDate(SAMPLE.date, $('#datefmt').value) };
     for (const d of defs) sample[d.key] = d.key;
-    $('#pv').textContent = build(sample, t, sep) + '.pdf';
+    const built = build(sample, t, sep);
+
+    // Split the template into literal text and placeholders, slug each part the same way
+    // build() slugs the whole string, then join the non-empty parts with the separator.
+    const parts = [];
+    let last = 0;
+    for (const m of t.matchAll(/\{(\w+)\}/g)) {
+        if (m.index > last) parts.push({ text: slug(t.slice(last, m.index), sep) });
+        parts.push({ key: m[1], text: slug(sample[m[1]] || '', sep) });
+        last = m.index + m[0].length;
+    }
+    if (last < t.length) parts.push({ text: slug(t.slice(last), sep) });
+    const tokens = parts.filter((p) => p.text);
+
+    const pv = $('#pv');
+    pv.textContent = '';
+    // Tokenizing matches build() for normal templates; if an odd literal breaks that
+    // equivalence, show build()'s exact output rather than a misleading preview.
+    if (tokens.map((p) => p.text).join(sep) === built) {
+        tokens.forEach((p, i) => {
+            if (i && sep) {
+                const s = document.createElement('span');
+                s.className = 'sep';
+                s.textContent = sep;
+                pv.append(s);
+            }
+            const span = document.createElement('span');
+            span.className = p.key ? 'tok' : 'lit';
+            if (p.key) span.dataset.key = p.key;
+            span.textContent = p.text;
+            pv.append(span);
+        });
+    } else pv.textContent = built;
+    pv.title = built + '.pdf';
+
     $('#pvnote').textContent = unknown.length
         ? 'Unknown placeholder(s): ' + unknown.map((k) => '{' + k + '}').join(', ')
         : (custom.length ? 'Custom field(s): ' + custom.map((k) => '{' + k + '}').join(', ') : '');
@@ -129,10 +173,11 @@ function row(f) {
     $('#tc').hidden = false;
     const tr = document.createElement('tr'); tr.id = 'r' + f.id;
     tr.innerHTML = '<td><div class="thumb"><span>' + f.ext.toUpperCase() + '</span></div></td>'
-        + '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint"></div></td><td class="st"></td><td><button class="d">Save copy</button></td>';
+        + '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint" id="h' + f.id + '"></div></td><td><span class="st"></span></td><td><button class="d">Save copy</button></td>';
     tr.querySelector('.o').textContent = f.original;
     tr.querySelector('.o').title = f.path;
     const inp = tr.querySelector('input'); inp.value = f.name;
+    inp.setAttribute('aria-describedby', 'h' + f.id);
     inp.oninput = () => { f.name = inp.value; f.edited = true; hints(); };
     tr.querySelector('.d').onclick = async () => {
         const r = await api.readFile(f.path);
@@ -168,11 +213,10 @@ function pumpThumbs() {
                 img.src = src;
                 box.append(img);
                 box.classList.add('has');
-                box.title = 'Preview ' + f.original;
+                box.dataset.label = f.original;
                 box.setAttribute('role', 'button');
                 box.setAttribute('aria-label', 'Preview ' + f.original);
-                box.tabIndex = 0;
-                box.onclick = () => showPreview(f);
+                box.tabIndex = 0; box.onclick = () => showPreview(f);
                 box.onkeydown = (e) => {
                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showPreview(f); }
                 };
@@ -270,9 +314,17 @@ async function showPreview(f) {
 function paint(f) {
     const tr = $('#r' + f.id); if (!tr) return;
     const inp = tr.querySelector('input'); if (document.activeElement !== inp) inp.value = f.name;
-    const lab = f.st === 'queued' && halt && !cancelled ? ['Paused', 'mut'] : (f.st === 'done' && f.renamed ? ['Renamed', 'ok'] : { queued: ['Queued', 'mut'], working: ['Reading...', 'mut'], done: ['Done', 'ok'], error: ['Failed', 'er'], skipped: ['Skipped', 'mut'] }[f.st]);
+    inp.setAttribute('aria-label', 'New name for ' + f.original);
+    const thumb = tr.querySelector('.thumb');
+    if (thumb && thumb.classList.contains('has')) {
+        thumb.dataset.label = f.original;
+        thumb.setAttribute('aria-label', 'Preview ' + f.original);
+    }
+    const lab = f.st === 'queued' && halt && !cancelled ? ['Paused', 'mut'] : (f.st === 'done' && f.renamed ? ['Renamed', 'ok'] : { queued: ['Queued', 'mut'], working: ['Reading...', 'work'], done: ['Done', 'ok'], error: ['Failed', 'er'], skipped: ['Skipped', 'mut'] }[f.st]);
     const s = tr.querySelector('.st'); s.className = 'st ' + lab[1]; s.textContent = lab[0]; s.title = f.note;
-    tr.querySelector('.d').disabled = f.st === 'working';
+    const save = tr.querySelector('.d');
+    save.disabled = f.st === 'working';
+    save.setAttribute('aria-label', 'Save a copy of ' + f.original);
 }
 const fin = (f) => names()[files.indexOf(f)];
 function hints() {
@@ -310,20 +362,58 @@ function renderUsage() {
     else if (priced) parts.push('est. $' + cost.toFixed(4) + ' for ' + priced + ' of ' + used.length + ' files');
     el.textContent = 'Usage: ' + parts.join(' \u00b7 ');
 }
+// The visual counter updates on every file, but announcements are limited to starts,
+// pauses, 10% milestones, and completion so large batches do not flood screen readers.
+let lastAnnouncedPct = -1, progressActive = false, progressPaused = false;
+function updateProgress(total, finished, busy, paused) {
+    const show = total > 0 && (busy || paused);
+    const pct = total ? Math.round((finished / total) * 100) : 0;
+    $('#progwrap').classList.toggle('active', show);
+    $('#progwrap').classList.toggle('warn', paused);
+    $('#progbar').style.width = pct + '%';
+    $('#prog').textContent = show ? finished + ' of ' + total + ' processed' : '';
+    const live = $('#progLive');
+    if (show) {
+        const text = paused
+            ? 'Paused at ' + finished + ' of ' + total + ' files.'
+            : finished + ' of ' + total + ' files processed.';
+        const resumed = progressPaused && !paused;
+        if ((!progressActive || paused || resumed || pct - lastAnnouncedPct >= 10) && live.textContent !== text) {
+            live.textContent = text;
+            lastAnnouncedPct = pct;
+        }
+        progressActive = true;
+        progressPaused = paused;
+    } else if (progressActive) {
+        if (total && finished === total) live.textContent = 'Finished processing ' + total + ' file' + (total === 1 ? '' : 's') + '.';
+        else if (total && cancelled) live.textContent = 'Cancelled after ' + finished + ' of ' + total + ' files.';
+        else if (total) live.textContent = 'Processing stopped after ' + finished + ' of ' + total + ' files.';
+        progressActive = false;
+        progressPaused = false;
+        lastAnnouncedPct = -1;
+    }
+}
 function sync() {
     const todo = files.some((f) => f.st !== 'done' && f.st !== 'skipped');
     $('#go').disabled = busy || !todo; $('#go2').disabled = busy || !todo;
     const any = files.some((f) => f.st === 'done');
     $('#zip').disabled = !any; $('#zip2').disabled = !any;
-    $('#clr').disabled = busy || !files.length; $('#clr2').disabled = busy;
+    $('#clr').disabled = busy || !files.length;
+    $('#clr').hidden = !files.length;
+    $('#clr2').disabled = busy;
     const anyErr = files.some((f) => f.st === 'error');
     $('#retry').disabled = busy || !anyErr; $('#retry2').disabled = busy || !anyErr;
     $('#rename').disabled = busy || !files.some((f) => f.st === 'done');
     $('#undo').disabled = busy || !undoStack.length;
     $('#undo').textContent = undoStack.length ? 'Undo rename (' + undoStack.length + ')' : 'Undo rename';
     $('#cancel').hidden = !busy;
+    const total = files.length;
     const finished = files.filter((f) => f.st === 'done' || f.st === 'error' || f.st === 'skipped').length;
-    $('#prog').textContent = busy && files.length ? finished + ' of ' + files.length + ' processed' : '';
+    const paused = halt && !cancelled && files.some((f) => f.st === 'error');
+    updateProgress(total, finished, busy, paused);
+    const hasFiles = total > 0;
+    $('#drop').classList.toggle('has-files', hasFiles);
+    $('#droptext').textContent = hasFiles ? 'Drop more files here, or click to choose files' : 'Drop files or folders here, or click to choose files';
     hints();
     renderUsage();
 }
@@ -387,6 +477,7 @@ async function analyze(f) {
 }
 async function run() {
     S = await api.getSettings(); halt = false; cancelled = false; haltFile = null; busy = true;
+    lastAnnouncedPct = -1; progressActive = false; progressPaused = false;
     $('#err').hidden = true; $('#msg').textContent = '';
     const q = files.filter((f) => f.st !== 'done' && f.st !== 'skipped'); q.forEach((f) => { f.st = 'queued'; f.note = ''; paint(f); }); sync();
     const sep = $('#sep').value;
@@ -407,7 +498,13 @@ async function run() {
                 if (cancelled) { f.st = 'queued'; f.note = ''; }
                 else {
                     f.st = 'error'; f.note = e.message;
-                    if (!halt) { halt = true; haltFile = f; $('#errmsg').textContent = f.original + ': ' + e.message; $('#err').hidden = false; }
+                    if (!halt) {
+                        halt = true; haltFile = f;
+                        $('#errmsg').textContent = f.original + ': ' + e.message;
+                        const box = $('#err');
+                        box.hidden = false;
+                        box.focus();
+                    }
                 }
             }
             paint(f); sync();
@@ -522,7 +619,6 @@ $('#undo').onclick = undoLast;
 $('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
 $('#imgclose').onclick = () => $('#imgdlg').close();
-$('#imgdlg').addEventListener('click', (e) => { if (e.target === $('#imgdlg')) $('#imgdlg').close(); });
 $('#imgdlg').addEventListener('close', () => {
     if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
     $('#imgview').removeAttribute('src');
@@ -555,8 +651,25 @@ function trapFocus(dlg) {
         if (back && document.contains(back)) back.focus();
     });
 }
+// Clicking the dimmed app behind a modal dismisses it (the backdrop reports the dialog
+// as its target). Both the press and release must land outside the dialog's box, so
+// dragging a text selection out of a field does not accidentally close Settings.
+function dismissOnBackdrop(dlg) {
+    let pressedOutside = false;
+    const outside = (e) => {
+        const r = dlg.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    dlg.addEventListener('pointerdown', (e) => { pressedOutside = e.target === dlg && outside(e); });
+    dlg.addEventListener('click', (e) => {
+        if (pressedOutside && e.target === dlg && outside(e)) dlg.close();
+        pressedOutside = false;
+    });
+}
 trapFocus($('#dlg'));
 trapFocus($('#imgdlg'));
+dismissOnBackdrop($('#dlg'));
+dismissOnBackdrop($('#imgdlg'));
 $('#okhint').textContent = '(' + OK_HINT + ')';
 // Keep the picker in sync with the formats the app actually accepts.
 $('#fi').accept = OK_EXT.map((e) => '.' + e).join(',');
@@ -566,10 +679,77 @@ drop.addEventListener('keydown', (e) => {
 });
 $('#pickFolder').onclick = async () => { const d = await api.pickFolder(); if (d) addPaths([d]); };
 $('#fi').onchange = (e) => { addPaths([...e.target.files].map((f) => api.pathFor(f))); e.target.value = ''; };
-['dragover', 'dragenter'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
-['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+// Files can be dropped anywhere in the window, not just on the drop zone. The depth
+// counter absorbs the dragenter/dragleave churn as the pointer crosses child elements.
+const dropmask = $('#dropmask');
+let dragDepth = 0;
+const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+const setDragging = (on) => { dropmask.hidden = !on; drop.classList.toggle('over', on); };
+window.addEventListener('dragenter', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    setDragging(true);
+});
+window.addEventListener('dragover', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', (e) => {
+    if (!dragDepth) return;
+    // relatedTarget is null when the pointer leaves the window entirely.
+    dragDepth = e.relatedTarget ? Math.max(0, dragDepth - 1) : 0;
+    if (!dragDepth) setDragging(false);
+});
+window.addEventListener('dragend', () => { dragDepth = 0; setDragging(false); });
+window.addEventListener('blur', () => { dragDepth = 0; setDragging(false); });
 // Dropped folders arrive as File entries too; files:expand walks them recursively.
-drop.addEventListener('drop', (e) => addPaths([...e.dataTransfer.files].map((f) => api.pathFor(f))));
+window.addEventListener('drop', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    setDragging(false);
+    addPaths([...e.dataTransfer.files].map((f) => api.pathFor(f)));
+});
+
+// Keep the sticky table header tucked below the action bar, which can wrap to two rows.
+const actionsBar = $('#actions');
+const measureActions = () => document.documentElement.style.setProperty('--actions-h', actionsBar.offsetHeight + 'px');
+new ResizeObserver(measureActions).observe(actionsBar);
+window.addEventListener('resize', measureActions);
+measureActions();
+
+// Global shortcuts. Text fields keep their native undo and Escape behavior.
+const isEditableTarget = (el) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+window.addEventListener('keydown', (e) => {
+    if ($('#dlg').open || $('#imgdlg').open) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key === ',') {
+        e.preventDefault();
+        $('#gear').click();
+        return;
+    }
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        $('#fi').click();
+        return;
+    }
+    if (mod && !e.shiftKey && !e.altKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (!$('#go').disabled) $('#go').click();
+        return;
+    }
+    if (mod && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        if (!$('#undo').disabled) $('#undo').click();
+        return;
+    }
+    if (e.key === 'Escape' && busy && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        cancelRun();
+    }
+});
 
 function applyPreset(p) {
     $('#tpl').value = p.template; $('#sep').value = p.sep; $('#datefmt').value = p.dateFormat; $('#extra').value = p.extra || '';
@@ -629,6 +809,12 @@ function setModelOptions(list, emptyText, selected) {
     sel.value = pick;
     return pick;
 }
+// Applies the saved theme preference to the document; CSS handles the actual tokens.
+function applyTheme(pref) {
+    const theme = ['light', 'dark'].includes(pref) ? pref : 'auto';
+    document.documentElement.dataset.theme = theme;
+    document.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = r.value === theme; });
+}
 function syncEngine() {
     const cloud = document.querySelector('input[name=engine]:checked').value === 'cloud';
     $('#apisec').hidden = !cloud;
@@ -675,6 +861,7 @@ async function loadS(full) {
     // `full` only runs once at startup - loadS() otherwise fires on every Settings-dialog open and
     // engine-setting change, and reapplying the active preset there would clobber unsaved template edits.
     S = await api.getSettings();
+    applyTheme(S.theme);
     $('#providerSel').innerHTML = PROVIDERS.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
     $('#providerSel').value = S.provider;
     document.querySelector('input[name=engine][value=' + S.engine + ']').checked = true;
@@ -686,6 +873,12 @@ async function loadS(full) {
     if (!full) return;
     presets = (S.presets && S.presets.length) ? S.presets : [DEFAULT_PRESET];
     activePreset = presets.find((p) => p.id === S.activePreset) ? S.activePreset : presets[0].id;
+    // Upgrade the untouched starter preset from builds that defaulted to four fields.
+    const starter = presets.find((p) => p.id === 'default' && p.name === 'Default');
+    if (starter && starter.template === LEGACY_DEFAULT_TEMPLATE) {
+        starter.template = DEFAULT_PRESET.template;
+        persistPresets();
+    }
     renderPresetSel();
     const active = presets.find((p) => p.id === activePreset);
     if (active) applyPreset(active);
@@ -693,6 +886,10 @@ async function loadS(full) {
 $('#gear').onclick = () => { if ($('#dlg').open) return; openDialog($('#dlg'), $('#gear')); loadS(); };
 $('#close').onclick = () => $('#dlg').close();
 document.querySelectorAll('input[name=engine]').forEach((r) => r.onchange = async () => { await api.setSettings({ engine: r.value }); syncEngine(); });
+document.querySelectorAll('input[name=theme]').forEach((r) => r.onchange = async () => {
+    applyTheme(r.value);
+    await api.setSettings({ theme: r.value });
+});
 $('#providerSel').onchange = async () => { await api.setSettings({ provider: $('#providerSel').value }); await loadS(); };
 $('#modelSel').onchange = () => api.setSettings({ provider: $('#providerSel').value, model: $('#modelSel').value });
 $('#mrefresh').onclick = () => refreshProvider();

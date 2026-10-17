@@ -1,11 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os'), { spawn } = require('child_process');
 const { LIST: PROVIDERS, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost } = require('./renderer/providers.js');
 const Exif = require('./renderer/exif.js');
 
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
-const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
+const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
 // Bundled model prices, refreshed by scripts/update-pricing.js. If the file is
 // missing the app still reports tokens, just without a cost estimate.
 let PRICING = { schemaVersion: 0, families: {}, models: {} };
@@ -13,7 +13,7 @@ try { PRICING = require('./pricing/pricing.json'); } catch { /* token-only mode 
 // A factory so each read gets its own objects rather than sharing mutable defaults.
 const DEF = () => ({
     engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
-    localModel: '', localMmproj: '', llamaServer: '', presets: [DEFAULT_PRESET], activePreset: 'default'
+    localModel: '', localMmproj: '', llamaServer: '', presets: [DEFAULT_PRESET], activePreset: 'default', theme: 'auto'
 });
 const SF = () => path.join(app.getPath('userData'), 'settings.json');
 const write = (s) => fs.writeFileSync(SF(), JSON.stringify(s, null, 2));
@@ -448,7 +448,8 @@ ipcMain.handle('settings:get', () => {
     return {
         engine: s.engine, provider: providerOf(s).id, models: s.models, keys, pdfMode: pdfMode(s),
         localModel: s.localModel, localMmproj: s.localMmproj, llamaServer: s.llamaServer, detectedBin: detectBin(),
-        presets: s.presets, activePreset: s.activePreset
+        presets: s.presets, activePreset: s.activePreset,
+        theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto'
     };
 });
 ipcMain.handle('settings:set', (_e, p) => {
@@ -465,6 +466,10 @@ ipcMain.handle('settings:set', (_e, p) => {
     }
     if (typeof p.model === 'string') s.models = { ...s.models, [target.id]: p.model };
     for (const k of ['engine', 'provider', 'localModel', 'localMmproj', 'llamaServer', 'presets', 'activePreset']) if (k in p) s[k] = p[k];
+    if (['auto', 'light', 'dark'].includes(p.theme)) {
+        s.theme = p.theme;
+        nativeTheme.themeSource = p.theme === 'auto' ? 'system' : p.theme;
+    }
     write(s); return { ok: true };
 });
 // Fetches the provider's model catalogue. A successful call doubles as the
@@ -537,7 +542,10 @@ function migrateUserData() {
 
 app.whenReady().then(() => {
     migrateUserData();
-    const w = new BrowserWindow({ width: 980, height: 820, title: 'Misnomer', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    // Match the native title bar and menus to the saved preference before the page paints.
+    const theme = read().theme;
+    nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
+    const w = new BrowserWindow({ width: 980, height: 760, title: 'Misnomer', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     w.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 });
