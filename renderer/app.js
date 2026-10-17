@@ -21,6 +21,7 @@ const { build, clean, placeholders } = window.Naming;
 const names = () => window.Naming.names(files);
 const Extract = window.Extract;
 const Rename = window.Rename;
+const Exif = window.Exif;
 // One entry per applied rename batch; Undo walks this stack backwards.
 const undoStack = [];
 
@@ -32,12 +33,27 @@ const SIPS_CONVERT = ['tif', 'tiff', 'heic', 'heif'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', ...CANVAS_CONVERT, ...SIPS_CONVERT];
 const OK_EXT = ['pdf', ...IMAGE_EXT, ...Extract.OK_EXT];
 const OK_HINT = 'PDF, images (PNG, JPG, GIF, WebP, BMP, ICO, SVG, AVIF, TIFF, HEIC), and text or Office files (TXT, MD, CSV, JSON, RTF, DOCX, XLSX, PPTX, ODT, EPUB)';
+// MIME type for the canvas decode path; SVG and ICO need their real type to decode.
+const BLOB_TYPE = { svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp', avif: 'image/avif' };
 
 // Thumbnails stay small and are generated a few at a time, so dropping a large
 // batch does not kick off hundreds of simultaneous decodes.
 const THUMB_MAX = 120, THUMB_WORKERS = 3;
-const thumbCache = new Map(), thumbQueue = [];
+const thumbCache = new Map(), thumbJobs = new Map(), thumbQueue = [];
 let thumbActive = 0, previewUrl = '';
+// Only draw thumbnails for rows near the viewport; off-screen rows wait until they
+// are scrolled into view, which keeps big batches responsive.
+const thumbObserver = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const f = thumbJobs.get(entry.target);
+            thumbObserver.unobserve(entry.target);
+            thumbJobs.delete(entry.target);
+            if (f) queueThumb(f);
+        }
+    }, { rootMargin: '200px' })
+    : null;
 
 // Sample values used only to render the template preview, never sent anywhere.
 const SAMPLE = { date: '2026-03-01', entity: 'acme', type: 'invoice', title: 'march service call' };
@@ -56,6 +72,7 @@ function fieldDefs() {
 $('#tpl').oninput = retpl;
 $('#fields').oninput = () => { renderChips(); preview(); };
 $('#sep').onchange = () => { retext(lastSep, $('#sep').value); lastSep = $('#sep').value; retpl(); };
+$('#datefmt').onchange = preview;
 function retpl() {
     const sep = $('#sep').value;
     files.forEach((f) => { if (f.info && !f.edited) { f.name = build(f.info, $('#tpl').value, sep); paint(f); } });
@@ -76,7 +93,7 @@ function preview() {
     const used = placeholders(t), known = RESERVED_KEYS.concat(defs.map((f) => f.key));
     const unknown = used.filter((k) => !known.includes(k));
     const custom = used.filter((k) => !RESERVED_KEYS.includes(k));
-    const sample = { ...SAMPLE };
+    const sample = { ...SAMPLE, date: Exif.formatDate(SAMPLE.date, $('#datefmt').value) };
     for (const d of defs) sample[d.key] = d.key;
     $('#pv').textContent = build(sample, t, sep) + '.pdf';
     $('#pvnote').textContent = unknown.length
@@ -122,13 +139,18 @@ function row(f) {
         if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
         save(fin(f), r.bytes);
     };
-    $('#tb').append(tr); paint(f); queueThumb(f);
+    $('#tb').append(tr); paint(f); observeThumb(f, tr.querySelector('.thumb'));
 }
 
 // A thumbnail is drawn from the file itself: PDFs render page one, sips formats are
 // converted first, and everything else is decoded by Chromium and scaled down.
-function queueThumb(f) {
+function observeThumb(f, box) {
     if (f.ext !== 'pdf' && !IMAGE_EXT.includes(f.ext)) return;
+    if (!thumbObserver) { queueThumb(f); return; }
+    thumbJobs.set(box, f);
+    thumbObserver.observe(box);
+}
+function queueThumb(f) {
     thumbQueue.push(f);
     pumpThumbs();
 }
@@ -144,10 +166,16 @@ function pumpThumbs() {
                 const img = document.createElement('img');
                 img.alt = '';
                 img.src = src;
-                img.title = 'Click to preview';
-                img.onclick = () => showPreview(f);
                 box.append(img);
                 box.classList.add('has');
+                box.title = 'Preview ' + f.original;
+                box.setAttribute('role', 'button');
+                box.setAttribute('aria-label', 'Preview ' + f.original);
+                box.tabIndex = 0;
+                box.onclick = () => showPreview(f);
+                box.onkeydown = (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showPreview(f); }
+                };
             })
             .catch(() => { /* leave the extension badge in place */ })
             .finally(() => { thumbActive--; pumpThumbs(); });
@@ -160,7 +188,7 @@ async function thumbFor(f) {
     if (r.ok) {
         if (f.ext === 'pdf') src = await pdfPreview(r.bytes, THUMB_MAX);
         else if (SIPS_CONVERT.includes(f.ext)) {
-            const c = await api.convert(r.bytes);
+            const c = await api.convert(r.bytes, THUMB_MAX);
             if (c.ok) src = await imagePreview(new Blob([c.bytes], { type: 'image/jpeg' }), THUMB_MAX);
         } else src = await imagePreview(new Blob([r.bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext }), THUMB_MAX);
     }
@@ -183,8 +211,11 @@ function pdfPreview(buf, max) {
 }
 async function imagePreview(blob, max) {
     let bmp;
-    try { bmp = await createImageBitmap(blob); }
-    catch { return elementPreview(blob, max); }
+    try {
+        // Asking for one dimension preserves the aspect ratio. This also avoids
+        // decoding a full-size bitmap just to shrink a phone photo into a thumbnail.
+        bmp = await createImageBitmap(blob, { resizeWidth: max, resizeQuality: 'high' });
+    } catch { return elementPreview(blob, max); }
     try {
         const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
         const c = document.createElement('canvas');
@@ -225,13 +256,14 @@ async function showPreview(f) {
     let src = '';
     if (f.ext === 'pdf') src = await pdfPreview(r.bytes, 1100);
     else if (SIPS_CONVERT.includes(f.ext)) {
-        const c = await api.convert(r.bytes);
+        const c = await api.convert(r.bytes, 1100);
         if (c.ok) { previewUrl = URL.createObjectURL(new Blob([c.bytes], { type: 'image/jpeg' })); src = previewUrl; }
     } else {
         previewUrl = URL.createObjectURL(new Blob([r.bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext }));
         src = previewUrl;
     }
-    if (!src) return;
+    if (!src) { $('#msg').textContent = 'Could not preview ' + f.original + '.'; return; }
+    img.alt = f.original;
     img.src = src;
     if (!$('#imgdlg').open) $('#imgdlg').showModal();
 }
@@ -298,8 +330,6 @@ async function toImage(blob) {
     if (!out) throw new Error('Could not convert the image to JPEG.');
     return out.arrayBuffer();
 }
-// MIME type for the canvas decode path; SVG and ICO need their real type to decode.
-const BLOB_TYPE = { svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp', avif: 'image/avif' };
 async function prep(f) {
     const read = await api.readFile(f.path);
     if (!read.ok) throw new Error(read.error);
@@ -451,6 +481,8 @@ async function zipAll() {
 }
 function clearAll() {
     files.length = 0; undoStack.length = 0; thumbCache.clear(); thumbQueue.length = 0;
+    if (thumbObserver) thumbObserver.disconnect();
+    thumbJobs.clear();
     $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true;
     halt = false; haltFile = null; $('#msg').textContent = ''; sync();
 }
@@ -463,12 +495,19 @@ $('#undo').onclick = undoLast;
 $('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
 $('#imgclose').onclick = () => $('#imgdlg').close();
+$('#imgdlg').addEventListener('click', (e) => { if (e.target === $('#imgdlg')) $('#imgdlg').close(); });
 $('#imgdlg').addEventListener('close', () => {
     if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
     $('#imgview').removeAttribute('src');
+    $('#imgview').alt = '';
 });
 $('#okhint').textContent = '(' + OK_HINT + ')';
+// Keep the picker in sync with the formats the app actually accepts.
+$('#fi').accept = OK_EXT.map((e) => '.' + e).join(',');
 const drop = $('#drop'); drop.onclick = () => $('#fi').click();
+drop.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#fi').click(); }
+});
 $('#pickFolder').onclick = async () => { const d = await api.pickFolder(); if (d) addPaths([d]); };
 $('#fi').onchange = (e) => { addPaths([...e.target.files].map((f) => api.pathFor(f))); e.target.value = ''; };
 ['dragover', 'dragenter'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
@@ -483,7 +522,7 @@ function applyPreset(p) {
     retpl();
 }
 function renderPresetSel() {
-    $('#presetSel').innerHTML = presets.map((p) => '<option value="' + p.id + '">' + p.name.replace(/</g, '&lt;') + '</option>').join('');
+    $('#presetSel').innerHTML = presets.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
     $('#presetSel').value = activePreset;
 }
 function currentPresetFields(name, id) {
@@ -542,12 +581,14 @@ function syncEngine() {
 
 // Rebuilds the Cloud API panel for the selected provider: key hint, connection
 // state, and the model list fetched from that provider.
+let refreshSeq = 0;
 async function refreshProvider() {
+    const seq = ++refreshSeq;
     const id = $('#providerSel').value;
     const p = providerById(id) || PROVIDERS[0];
     const saved = (S.models || {})[id] || '';
     $('#key').placeholder = p.keyHint || 'API key';
-    $('#keyhelp').innerHTML = 'Get a key at <a data-docs="' + esc(p.docs) + '">' + esc(hostOf(p.docs)) + '</a>';
+    $('#keyhelp').innerHTML = 'Get a key at <a href="#" data-docs="' + esc(p.docs) + '">' + esc(hostOf(p.docs)) + '</a>';
 
     const tail = (S.keys || {})[id];
     if (!tail) {
@@ -558,6 +599,8 @@ async function refreshProvider() {
     setConn('wait', 'Checking connection...');
     setModelOptions([], 'Loading models...');
     const r = await api.listModels(id);
+    // A newer selection may have started while this request was in flight.
+    if (seq !== refreshSeq) return;
     if (!r.ok) {
         setConn('er', r.error);
         setModelOptions([], 'Could not load models');
@@ -591,13 +634,13 @@ async function loadS(full) {
     const active = presets.find((p) => p.id === activePreset);
     if (active) applyPreset(active);
 }
-$('#gear').onclick = async () => { await loadS(); $('#dlg').showModal(); };
+$('#gear').onclick = () => { if ($('#dlg').open) return; $('#dlg').showModal(); loadS(); };
 $('#close').onclick = () => $('#dlg').close();
 document.querySelectorAll('input[name=engine]').forEach((r) => r.onchange = async () => { await api.setSettings({ engine: r.value }); syncEngine(); });
 $('#providerSel').onchange = async () => { await api.setSettings({ provider: $('#providerSel').value }); await loadS(); };
 $('#modelSel').onchange = () => api.setSettings({ provider: $('#providerSel').value, model: $('#modelSel').value });
 $('#mrefresh').onclick = () => refreshProvider();
-$('#keyhelp').onclick = (e) => { const a = e.target.closest('a[data-docs]'); if (a) api.open(a.dataset.docs); };
+$('#keyhelp').onclick = (e) => { const a = e.target.closest('a[data-docs]'); if (a) { e.preventDefault(); api.open(a.dataset.docs); } };
 $('#ksave').onclick = async () => {
     const k = $('#key').value.trim();
     if (!k) return;
@@ -611,5 +654,5 @@ document.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => 
     const p = await api.pick(b.dataset.pick === 'llamaServer' ? 'bin' : 'gguf');
     if (p) { await api.setSettings({ [b.dataset.pick]: p }); await loadS(); }
 });
-$('#hf').onclick = () => api.open('https://huggingface.co/models?pipeline_tag=image-text-to-text&sort=trending&search=gguf');
+$('#hf').onclick = (e) => { e.preventDefault(); api.open('https://huggingface.co/models?pipeline_tag=image-text-to-text&sort=trending&search=gguf'); };
 loadS(true);

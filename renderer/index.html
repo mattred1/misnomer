@@ -110,6 +110,16 @@
             cursor: default
         }
 
+        button:focus-visible,
+        input[type=text]:focus-visible,
+        input[type=password]:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        #drop:focus-visible {
+            outline: 2px solid var(--ac);
+            outline-offset: 2px
+        }
+
         .chips,
         .bar {
             display: flex;
@@ -142,6 +152,11 @@
         }
 
         #drop.over {
+            border-color: var(--ac);
+            color: var(--fg)
+        }
+
+        #drop:focus-visible {
             border-color: var(--ac);
             color: var(--fg)
         }
@@ -194,7 +209,17 @@
         }
 
         .thumb.has {
-            border-color: transparent
+            border-color: transparent;
+            cursor: zoom-in
+        }
+
+        .thumb.has:hover {
+            border-color: var(--ac)
+        }
+
+        .thumb:focus-visible {
+            outline: 2px solid var(--ac);
+            outline-offset: 2px
         }
 
         .thumb img {
@@ -409,13 +434,13 @@
             <textarea id="extra" rows="2" spellcheck="false" placeholder="e.g. Use the client name from the letterhead, not the sender"></textarea>
         </div>
         <div class="bar" style="margin-bottom:8px"><button id="pickFolder">Choose a folder&hellip;</button><span class="mut" style="font-size:13px">Folders are scanned recursively.</span></div>
-        <div id="drop">Drop files or folders here, or click to choose files <span id="okhint"></span></div>
-        <input type="file" id="fi" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.ico,.svg,.avif">
+        <div id="drop" role="button" tabindex="0">Drop files or folders here, or click to choose files <span id="okhint"></span></div>
+        <input type="file" id="fi" multiple hidden>
         <div class="card" id="err" hidden><b>Paused: an error stopped processing.</b>
             <p id="errmsg"></p>
             <div class="bar"><button id="zip2">Download completed files (ZIP)</button><button id="retry2" disabled>Retry failed</button><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button></div>
         </div>
-        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="retry" disabled>Retry failed</button><button id="cancel" hidden>Cancel</button><button class="pri" id="rename" disabled>Rename in place</button><button id="undo" disabled>Undo rename</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span><span id="prog" class="mut"></span></div>
+        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="retry" disabled>Retry failed</button><button id="cancel" hidden>Cancel</button><button class="pri" id="rename" disabled>Rename in place</button><button id="undo" disabled>Undo rename</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg" role="status" aria-live="polite"></span><span id="prog" class="mut" aria-live="polite"></span></div>
         <div class="card" id="tc" hidden style="overflow-x:auto">
             <table>
                 <thead>
@@ -479,7 +504,7 @@
             <div class="row"><button data-pick="localModel">Model (.gguf)</button><span class="p" id="lm"></span></div>
             <div class="row"><button data-pick="localMmproj">Vision projector (mmproj .gguf)</button><span class="p" id="lp"></span></div>
             <div class="row"><button data-pick="llamaServer">llama-server binary</button><span class="p" id="lb"></span></div>
-            <div style="margin-top:10px">Find models: <a id="hf">huggingface.co vision GGUF models</a>
+            <div style="margin-top:10px">Find models: <a id="hf" href="#">huggingface.co vision GGUF models</a>
                 <ol>
                     <li>Install the engine once: <code>brew install llama.cpp</code></li>
                     <li>Open the link, pick a model repo, then Files and versions.</li>
@@ -490,7 +515,7 @@
         </fieldset>
         <div class="bar" style="justify-content:flex-end"><button class="pri" id="close">Done</button></div>
     </dialog>
-    <dialog id="imgdlg">
+    <dialog id="imgdlg" aria-label="File preview">
         <div class="mut" id="imgname" style="font:12px ui-monospace,monospace;margin-bottom:8px;overflow-wrap:anywhere"></div>
         <img id="imgview" alt="">
         <div class="bar" style="justify-content:flex-end;margin-top:10px"><button id="imgclose">Close</button></div>
@@ -501,6 +526,7 @@
     <script src="extract.js"></script>
     <script src="providers.js"></script>
     <script src="rename.js"></script>
+    <script src="exif.js"></script>
     <script src="app.js"></script>
 </body>
 

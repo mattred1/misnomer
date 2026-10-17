@@ -5,7 +5,7 @@ const Exif = require('./renderer/exif.js');
 
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
-const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '' };
+const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
 // A factory so each read gets its own objects rather than sharing mutable defaults.
 const DEF = () => ({
     engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
@@ -278,10 +278,18 @@ const inflight = new Set();
 // A photo often shows no printed date, but the camera recorded one when it was taken.
 // The renderer sends the original path so this still works for formats it converted
 // to JPEG before the request (TIFF/HEIC, canvas re-encodes), whose EXIF would be lost.
-function captureDate(filePath, dateFormat) {
+// Only the head of the file is read: every container keeps its EXIF block near the start.
+const EXIF_HEAD_BYTES = 4 * 1024 * 1024;
+async function captureDate(filePath, dateFormat) {
     if (!filePath) return '';
-    try { return Exif.formatDate(Exif.exifDate(fs.readFileSync(filePath)), dateFormat); }
-    catch { return ''; }
+    let fh = null;
+    try {
+        fh = await fs.promises.open(filePath, 'r');
+        const head = Buffer.alloc(EXIF_HEAD_BYTES);
+        const { bytesRead } = await fh.read(head, 0, head.length, 0);
+        return Exif.formatDate(Exif.exifDate(head.subarray(0, bytesRead)), dateFormat);
+    } catch { return ''; }
+    finally { if (fh) await fh.close().catch(() => { /* already closed */ }); }
 }
 ipcMain.handle('analyze', async (_e, req) => {
     const s = read();
@@ -292,7 +300,7 @@ ipcMain.handle('analyze', async (_e, req) => {
         const info = await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)));
         // Only fill a date the model left empty; a visible printed date always wins.
         if (req.kind === 'image' && !info.date) {
-            const taken = captureDate(req.path, req.dateFormat);
+            const taken = await captureDate(req.path, req.dateFormat);
             if (taken) { info.date = taken; info.dateSource = 'exif'; }
         }
         return { ok: true, info };
@@ -305,27 +313,32 @@ ipcMain.handle('abort', () => { for (const c of inflight) c.abort(); return true
 // sips ships with macOS and handles the formats Chromium cannot decode
 // (TIFF, HEIC/HEIF), which the renderer's canvas-based conversion cannot reach.
 const SIPS = '/usr/bin/sips';
-function sipsToJpeg(buf) {
+async function sipsToJpeg(buf, max) {
+    if (!fs.existsSync(SIPS)) throw new Error('TIFF and HEIC conversion needs macOS sips.');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misnomer-'));
+    const src = path.join(dir, 'input'), dst = path.join(dir, 'output.jpg');
+    const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+    try { await fs.promises.writeFile(src, buf); } catch (e) { cleanup(); throw e; }
+    const args = ['-s', 'format', 'jpeg'];
+    // Thumbnails only need a small image; resize during the conversion instead of
+    // converting at full size and shrinking the bytes in the renderer.
+    if (max) args.push('-Z', String(max));
+    args.push(src, '--out', dst);
     return new Promise((resolve, reject) => {
-        if (!fs.existsSync(SIPS)) return reject(new Error('TIFF and HEIC conversion needs macOS sips.'));
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misnomer-'));
-        const src = path.join(dir, 'input'), dst = path.join(dir, 'output.jpg');
-        const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
-        try { fs.writeFileSync(src, buf); } catch (e) { cleanup(); return reject(e); }
-        const p = spawn(SIPS, ['-s', 'format', 'jpeg', src, '--out', dst]);
+        const p = spawn(SIPS, args);
         let err = '';
         p.stderr.on('data', (d) => { err = (err + d).slice(-300); });
         p.on('error', (e) => { cleanup(); reject(e); });
-        p.on('exit', (code) => {
+        p.on('exit', async (code) => {
             try {
-                if (code !== 0 || !fs.existsSync(dst)) return reject(new Error('Could not convert the image: ' + err.trim()));
-                resolve(fs.readFileSync(dst));
-            } finally { cleanup(); }
+                if (code !== 0 || !fs.existsSync(dst)) throw new Error('Could not convert the image: ' + err.trim());
+                resolve(await fs.promises.readFile(dst));
+            } catch (e) { reject(e); } finally { cleanup(); }
         });
     });
 }
-ipcMain.handle('convert', async (_e, buf) => {
-    try { return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf)) }; }
+ipcMain.handle('convert', async (_e, buf, max) => {
+    try { return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf), max) }; }
     catch (e) { return { ok: false, error: e.message }; }
 });
 
@@ -336,26 +349,27 @@ ipcMain.handle('convert', async (_e, buf) => {
 const MAX_EXPAND = 2000;
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '.hg']);
 
-function walk(dir, out) {
-    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+async function walk(dir, out) {
+    for (const ent of await fs.promises.readdir(dir, { withFileTypes: true })) {
         if (out.length >= MAX_EXPAND) return;
         if (ent.name.startsWith('.')) continue;
         const p = path.join(dir, ent.name);
-        if (ent.isDirectory()) { if (!SKIP_DIRS.has(ent.name)) walk(p, out); }
+        if (ent.isDirectory()) { if (!SKIP_DIRS.has(ent.name)) await walk(p, out); }
         else if (ent.isFile()) out.push(p);
-        else if (ent.isSymbolicLink()) { try { if (fs.statSync(p).isFile()) out.push(p); } catch { /* broken link */ } }
+        else if (ent.isSymbolicLink()) { try { if ((await fs.promises.stat(p)).isFile()) out.push(p); } catch { /* broken link */ } }
     }
 }
 
 // Expands files and folders into a flat list. Folders are walked recursively.
-ipcMain.handle('files:expand', (_e, paths) => {
+// Async so a large drop does not freeze the window while it is scanned.
+ipcMain.handle('files:expand', async (_e, paths) => {
     try {
         const found = [];
         for (const p of paths || []) {
             if (found.length >= MAX_EXPAND) break;
             let st;
-            try { st = fs.statSync(p); } catch { continue; }
-            if (st.isDirectory()) walk(p, found);
+            try { st = await fs.promises.stat(p); } catch { continue; }
+            if (st.isDirectory()) await walk(p, found);
             else if (st.isFile()) found.push(p);
         }
         const files = found.map((p) => {
@@ -366,15 +380,17 @@ ipcMain.handle('files:expand', (_e, paths) => {
     } catch (e) { return { ok: false, error: e.message }; }
 });
 
-ipcMain.handle('files:read', (_e, p) => {
-    try { return { ok: true, bytes: fs.readFileSync(p) }; }
+ipcMain.handle('files:read', async (_e, p) => {
+    try { return { ok: true, bytes: await fs.promises.readFile(p) }; }
     catch (e) { return { ok: false, error: e.message }; }
 });
 
 // Filenames currently in each directory, so collisions can be resolved before renaming.
-ipcMain.handle('files:existing', (_e, dirs) => {
+ipcMain.handle('files:existing', async (_e, dirs) => {
     const out = {};
-    for (const d of dirs || []) { try { out[d] = fs.readdirSync(d); } catch { out[d] = []; } }
+    await Promise.all((dirs || []).map(async (d) => {
+        try { out[d] = await fs.promises.readdir(d); } catch { out[d] = []; }
+    }));
     return out;
 });
 
@@ -463,7 +479,7 @@ ipcMain.handle('pickFolder', async () => {
 ipcMain.handle('save', async (_e, name, buf) => {
     const r = await dialog.showSaveDialog({ defaultPath: path.join(app.getPath('downloads'), name) });
     if (r.canceled || !r.filePath) return false;
-    fs.writeFileSync(r.filePath, Buffer.from(buf)); return true;
+    await fs.promises.writeFile(r.filePath, Buffer.from(buf)); return true;
 });
 // Only links we put in the UI ourselves may be opened externally.
 const ALLOWED_HOSTS = new Set(['huggingface.co']);
