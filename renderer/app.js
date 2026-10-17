@@ -199,8 +199,8 @@ async function analyze(f) {
         name: f.original, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
         fields: fieldDefs(), dateFormat: $('#datefmt').value, extra: $('#extra').value
     };
-    // Only the local engine needs pages rendered; the API reads PDFs directly.
-    if (S.provider === 'local' && p.kind === 'document') Object.assign(req, await pdfPrep(p.bytes.slice(0)));
+    // Providers that cannot take a PDF directly get page images from the renderer.
+    if (S.pdfMode === 'pages' && p.kind === 'document') Object.assign(req, await pdfPrep(p.bytes.slice(0)));
     const r = await api.analyze(req);
     if (!r.ok) throw new Error(r.error);
     return r.info;
@@ -225,7 +225,7 @@ async function run() {
             paint(f); sync();
         }
     };
-    await Promise.all(Array.from({ length: S.provider === 'local' ? 1 : 2 }, worker));
+    await Promise.all(Array.from({ length: S.engine === 'local' ? 1 : 2 }, worker));
     busy = false; $('#prog').textContent = ''; files.forEach(paint); sync();
 }
 function cancelRun() {
@@ -371,16 +371,79 @@ $('#presetDelete').onclick = () => {
     renderPresetSel(); applyPreset(presets[0]); persistPresets();
 };
 
+const { LIST: PROVIDERS, providerById } = window.Providers;
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hostOf = (url) => { try { return new URL(url).host; } catch { return url; } };
+
+// Green/amber/red dot plus its caption.
+function setConn(state, text) {
+    $('#dot').className = 'dot' + (state ? ' ' + state : '');
+    $('#keystat').textContent = text;
+}
+function setModelOptions(list, emptyText, selected) {
+    const sel = $('#modelSel');
+    if (!list.length) {
+        sel.innerHTML = '<option value="">' + esc(emptyText || 'No models') + '</option>';
+        sel.disabled = true;
+        return '';
+    }
+    sel.disabled = false;
+    sel.innerHTML = list.map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + '</option>').join('');
+    const pick = list.some((m) => m.id === selected) ? selected : list[0].id;
+    sel.value = pick;
+    return pick;
+}
+function syncEngine() {
+    const cloud = document.querySelector('input[name=engine]:checked').value === 'cloud';
+    $('#apisec').hidden = !cloud;
+    $('#localsec').hidden = cloud;
+}
+
+// Rebuilds the Cloud API panel for the selected provider: key hint, connection
+// state, and the model list fetched from that provider.
+async function refreshProvider() {
+    const id = $('#providerSel').value;
+    const p = providerById(id) || PROVIDERS[0];
+    const saved = (S.models || {})[id] || '';
+    $('#key').placeholder = p.keyHint || 'API key';
+    $('#keyhelp').innerHTML = 'Get a key at <a data-docs="' + esc(p.docs) + '">' + esc(hostOf(p.docs)) + '</a>';
+
+    const tail = (S.keys || {})[id];
+    if (!tail) {
+        setConn('', 'No ' + p.name + ' key saved.');
+        setModelOptions([], 'Save an API key to load models');
+        return;
+    }
+    setConn('wait', 'Checking connection...');
+    setModelOptions([], 'Loading models...');
+    const r = await api.listModels(id);
+    if (!r.ok) {
+        setConn('er', r.error);
+        setModelOptions([], 'Could not load models');
+        return;
+    }
+    setConn('ok', 'Connected. Key ends in ' + tail + ', stored encrypted. ' + r.models.length + ' models available.');
+    const picked = setModelOptions(r.models, '', saved);
+    // First visit, or the saved model is no longer offered: remember what we selected.
+    if (picked && picked !== saved) {
+        S.models = { ...(S.models || {}), [id]: picked };
+        await api.setSettings({ provider: id, model: picked });
+    }
+}
+
 async function loadS(full) {
     // `full` only runs once at startup - loadS() otherwise fires on every Settings-dialog open and
     // engine-setting change, and reapplying the active preset there would clobber unsaved template edits.
     S = await api.getSettings();
-    document.querySelector('input[name=prov][value=' + S.provider + ']').checked = true;
-    $('#model').value = S.model;
-    $('#keystat').textContent = S.hasKey ? 'Key saved (ends in ' + S.keyTail + '), stored encrypted' : 'No key saved';
+    $('#providerSel').innerHTML = PROVIDERS.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
+    $('#providerSel').value = S.provider;
+    document.querySelector('input[name=engine][value=' + S.engine + ']').checked = true;
+    syncEngine();
     $('#lm').textContent = S.localModel || 'None chosen';
     $('#lp').textContent = S.localMmproj || 'None chosen';
     $('#lb').textContent = S.llamaServer || (S.detectedBin ? 'Auto-detected: ' + S.detectedBin : 'Not found');
+    await refreshProvider();
     if (!full) return;
     presets = (S.presets && S.presets.length) ? S.presets : [DEFAULT_PRESET];
     activePreset = presets.find((p) => p.id === S.activePreset) ? S.activePreset : presets[0].id;
@@ -390,10 +453,20 @@ async function loadS(full) {
 }
 $('#gear').onclick = async () => { await loadS(); $('#dlg').showModal(); };
 $('#close').onclick = () => $('#dlg').close();
-document.querySelectorAll('input[name=prov]').forEach((r) => r.onchange = () => api.setSettings({ provider: r.value }));
-$('#model').onchange = () => api.setSettings({ model: $('#model').value.trim() });
-$('#ksave').onclick = async () => { const k = $('#key').value.trim(); if (!k) return; const r = await api.setSettings({ apiKey: k }); $('#key').value = ''; await loadS(); if (!r.ok) $('#keystat').textContent = r.error; };
-$('#kdel').onclick = async () => { await api.setSettings({ clearKey: true }); await loadS(); };
+document.querySelectorAll('input[name=engine]').forEach((r) => r.onchange = async () => { await api.setSettings({ engine: r.value }); syncEngine(); });
+$('#providerSel').onchange = async () => { await api.setSettings({ provider: $('#providerSel').value }); await loadS(); };
+$('#modelSel').onchange = () => api.setSettings({ provider: $('#providerSel').value, model: $('#modelSel').value });
+$('#mrefresh').onclick = () => refreshProvider();
+$('#keyhelp').onclick = (e) => { const a = e.target.closest('a[data-docs]'); if (a) api.open(a.dataset.docs); };
+$('#ksave').onclick = async () => {
+    const k = $('#key').value.trim();
+    if (!k) return;
+    const r = await api.setSettings({ provider: $('#providerSel').value, apiKey: k });
+    $('#key').value = '';
+    if (!r.ok) { setConn('er', r.error); return; }
+    await loadS();
+};
+$('#kdel').onclick = async () => { await api.setSettings({ provider: $('#providerSel').value, clearKey: true }); await loadS(); };
 document.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => {
     const p = await api.pick(b.dataset.pick === 'llamaServer' ? 'bin' : 'gguf');
     if (p) { await api.setSettings({ [b.dataset.pick]: p }); await loadS(); }

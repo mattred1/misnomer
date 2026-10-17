@@ -198,6 +198,26 @@
             color: var(--ok)
         }
 
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--mut);
+            flex: 0 0 auto
+        }
+
+        .dot.ok {
+            background: var(--ok)
+        }
+
+        .dot.er {
+            background: var(--er)
+        }
+
+        .dot.wait {
+            background: #d0932a
+        }
+
         .er {
             color: var(--er)
         }
@@ -375,15 +395,28 @@
         <h2 style="margin:0 0 12px;font-size:17px">Settings</h2>
         <fieldset>
             <legend>Engine</legend>
-            <label class="row"><input type="radio" name="prov" value="anthropic"> Anthropic API (120 second timeout per request)</label>
-            <label class="row"><input type="radio" name="prov" value="local"> Local model (runs on this Mac)</label>
+            <label class="row"><input type="radio" name="engine" value="cloud"> Cloud API (120 second timeout per request)</label>
+            <label class="row"><input type="radio" name="engine" value="local"> Local model (runs on this Mac)</label>
         </fieldset>
-        <fieldset>
-            <legend>Anthropic API</legend>
-            <label for="key">API key</label>
-            <div class="row"><input type="password" id="key" placeholder="sk-ant-..." autocomplete="off"><button id="ksave">Save</button><button id="kdel">Remove</button></div>
-            <div class="mut" id="keystat"></div>
-            <label for="model" style="margin-top:10px">Model</label><input type="text" id="model">
+        <fieldset id="apisec">
+            <legend>Cloud API</legend>
+            <label for="providerSel">Provider</label>
+            <select id="providerSel"></select>
+
+            <label for="key" style="margin-top:10px">API key</label>
+            <div class="row">
+                <input type="password" id="key" autocomplete="off">
+                <button id="ksave">Save</button>
+                <button id="kdel">Remove</button>
+            </div>
+            <div class="row"><span id="dot" class="dot"></span><span class="mut" id="keystat"></span></div>
+            <div class="mut" style="margin-top:4px" id="keyhelp"></div>
+
+            <label for="modelSel" style="margin-top:10px">Model</label>
+            <div class="row">
+                <select id="modelSel" style="flex:1"></select>
+                <button id="mrefresh">Refresh</button>
+            </div>
         </fieldset>
         <fieldset>
             <legend>Naming presets</legend>
@@ -401,7 +434,7 @@
             <textarea id="fields" rows="3" spellcheck="false" placeholder="amount = the total amount due, with its currency symbol&#10;category = a single word grouping the document"></textarea>
             <div class="mut" style="margin-top:6px">Adds extra values for the model to fill in. Use them in the name template, like <code>{amount}</code>.</div>
         </fieldset>
-        <fieldset>
+        <fieldset id="localsec">
             <legend>Local model</legend>
             <div class="row"><button data-pick="localModel">Model (.gguf)</button><span class="p" id="lm"></span></div>
             <div class="row"><button data-pick="localMmproj">Vision projector (mmproj .gguf)</button><span class="p" id="lp"></span></div>
@@ -421,6 +454,7 @@
     <script src="../node_modules/jszip/dist/jszip.min.js"></script>
     <script src="naming.js"></script>
     <script src="extract.js"></script>
+    <script src="providers.js"></script>
     <script src="rename.js"></script>
     <script src="app.js"></script>
 </body>
