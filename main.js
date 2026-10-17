@@ -218,6 +218,71 @@ ipcMain.handle('convert', async (_e, buf) => {
     try { return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf)) }; }
     catch (e) { return { ok: false, error: e.message }; }
 });
+
+// ---------------------------------------------------------------------------
+// Filesystem access for in-place renaming. The renderer only ever deals in
+// paths; every operation below is confined to the folder a file came from.
+// ---------------------------------------------------------------------------
+const MAX_EXPAND = 2000;
+const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '.hg']);
+
+function walk(dir, out) {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (out.length >= MAX_EXPAND) return;
+        if (ent.name.startsWith('.')) continue;
+        const p = path.join(dir, ent.name);
+        if (ent.isDirectory()) { if (!SKIP_DIRS.has(ent.name)) walk(p, out); }
+        else if (ent.isFile()) out.push(p);
+        else if (ent.isSymbolicLink()) { try { if (fs.statSync(p).isFile()) out.push(p); } catch { /* broken link */ } }
+    }
+}
+
+// Expands files and folders into a flat list. Folders are walked recursively.
+ipcMain.handle('files:expand', (_e, paths) => {
+    try {
+        const found = [];
+        for (const p of paths || []) {
+            if (found.length >= MAX_EXPAND) break;
+            let st;
+            try { st = fs.statSync(p); } catch { continue; }
+            if (st.isDirectory()) walk(p, found);
+            else if (st.isFile()) found.push(p);
+        }
+        const files = found.map((p) => {
+            const name = path.basename(p);
+            return { path: p, dir: path.dirname(p), name, ext: (name.split('.').pop() || '').toLowerCase() };
+        });
+        return { ok: true, truncated: found.length >= MAX_EXPAND, files };
+    } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('files:read', (_e, p) => {
+    try { return { ok: true, bytes: fs.readFileSync(p) }; }
+    catch (e) { return { ok: false, error: e.message }; }
+});
+
+// Filenames currently in each directory, so collisions can be resolved before renaming.
+ipcMain.handle('files:existing', (_e, dirs) => {
+    const out = {};
+    for (const d of dirs || []) { try { out[d] = fs.readdirSync(d); } catch { out[d] = []; } }
+    return out;
+});
+
+ipcMain.handle('files:rename', (_e, plan) => (plan || []).map((e) => {
+    const from = String(e.from || ''), to = String(e.to || '');
+    try {
+        if (!from || !to) return { id: e.id, ok: false, error: 'Missing path.' };
+        // The single guard that stops a bad plan from moving a file anywhere else on disk.
+        if (path.dirname(from) !== path.dirname(to)) return { id: e.id, ok: false, error: 'Refusing to move a file to another folder.' };
+        if (from === to) return { id: e.id, ok: true, skipped: true };
+        // On a case-insensitive volume a case-only rename resolves to the same file,
+        // so existsSync would wrongly look like a collision.
+        const caseOnly = from.toLowerCase() === to.toLowerCase();
+        if (!caseOnly && fs.existsSync(to)) return { id: e.id, ok: false, error: 'That name is already taken.' };
+        fs.renameSync(from, to);
+        return { id: e.id, ok: true };
+    } catch (err) { return { id: e.id, ok: false, error: err.message }; }
+}));
 ipcMain.handle('settings:get', () => {
     const s = read(), k = getKey(s);
     return {
@@ -238,6 +303,10 @@ ipcMain.handle('settings:set', (_e, p) => {
 });
 ipcMain.handle('pick', async (_e, kind) => {
     const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: kind === 'bin' ? [] : [{ name: 'GGUF model', extensions: ['gguf'] }] });
+    return r.canceled ? '' : r.filePaths[0];
+});
+ipcMain.handle('pickFolder', async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     return r.canceled ? '' : r.filePaths[0];
 });
 ipcMain.handle('save', async (_e, name, buf) => {
