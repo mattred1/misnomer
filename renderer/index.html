@@ -118,6 +118,16 @@
             align-items: center
         }
 
+        .pv {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--mut)
+        }
+
+        .bad {
+            color: var(--er)
+        }
+
         .chips {
             margin-top: 8px
         }
@@ -313,7 +323,9 @@
                 <li><code>{entity}</code> &mdash; the vendor, company, or person tied to the document, if any</li>
                 <li><code>{date}</code> &mdash; the document's date, formatted per the Date format option below</li>
                 <li><code>{type}</code> &mdash; the document type, like invoice, receipt, screenshot, or photo</li>
+                <li>Custom fields you define in Settings show up here as extra chips</li>
             </ul>
+            <div class="pv">Preview: <code id="pv"></code> <span id="pvnote"></span></div>
             <div class="grid2" style="margin-top:10px">
                 <div><label for="sep">Separator</label>
                     <select id="sep">
@@ -337,13 +349,13 @@
             <label for="extra" style="margin-top:10px">Custom instructions for the AI (optional)</label>
             <textarea id="extra" rows="2" spellcheck="false" placeholder="e.g. Use the client name from the letterhead, not the sender"></textarea>
         </div>
-        <div id="drop">Drop files here or click to choose (PDF, PNG, JPG, JPEG, GIF)</div>
-        <input type="file" id="fi" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.gif">
+        <div id="drop">Drop files here or click to choose <span id="okhint"></span></div>
+        <input type="file" id="fi" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.ico,.svg,.avif">
         <div class="card" id="err" hidden><b>Paused: an error stopped processing.</b>
             <p id="errmsg"></p>
-            <div class="bar"><button id="zip2">Download completed files (ZIP)</button><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button></div>
+            <div class="bar"><button id="zip2">Download completed files (ZIP)</button><button id="retry2" disabled>Retry failed</button><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button></div>
         </div>
-        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span></div>
+        <div class="bar"><button class="pri" id="go" disabled>Generate names</button><button id="retry" disabled>Retry failed</button><button id="cancel" hidden>Cancel</button><button id="zip" disabled>Download all (ZIP)</button><button id="clr" disabled>Clear all</button><span id="msg"></span><span id="prog" class="mut"></span></div>
         <div class="card" id="tc" hidden style="overflow-x:auto">
             <table>
                 <thead>
@@ -380,7 +392,13 @@
                 <button id="presetUpdate">Update</button>
                 <button id="presetDelete">Delete</button>
             </div>
-            <div class="mut">Saves the template, separator, date format, and custom instructions from the main window.</div>
+            <div class="mut">Saves the template, separator, date format, custom instructions, and custom fields from the main window.</div>
+        </fieldset>
+        <fieldset>
+            <legend>Custom fields</legend>
+            <label for="fields">One per line, as <code>name = description</code></label>
+            <textarea id="fields" rows="3" spellcheck="false" placeholder="amount = the total amount due, with its currency symbol&#10;category = a single word grouping the document"></textarea>
+            <div class="mut" style="margin-top:6px">Adds extra values for the model to fill in. Use them in the name template, like <code>{amount}</code>.</div>
         </fieldset>
         <fieldset>
             <legend>Local model</legend>
@@ -400,6 +418,8 @@
     </dialog>
     <script src="../node_modules/pdfjs-dist/build/pdf.min.js"></script>
     <script src="../node_modules/jszip/dist/jszip.min.js"></script>
+    <script src="naming.js"></script>
+    <script src="extract.js"></script>
     <script src="app.js"></script>
 </body>
 

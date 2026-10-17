@@ -1,8 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
-const path = require('path'), fs = require('fs'), { spawn } = require('child_process');
+const path = require('path'), fs = require('fs'), os = require('os'), { spawn } = require('child_process');
 
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
-const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif' };
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '' };
 const DEF = { provider: 'anthropic', model: 'claude-haiku-5-5', apiKeyEnc: '', localModel: '', localMmproj: '', llamaServer: '', presets: [DEFAULT_PRESET], activePreset: 'default' };
 const SF = () => path.join(app.getPath('userData'), 'settings.json');
@@ -23,61 +23,112 @@ const DATE_HINTS = {
 };
 
 // JSON schema used for structured outputs so the model cannot return malformed JSON.
-const SCHEMA = (dateHint) => ({
-    type: 'object',
-    properties: {
+// The four built-in fields are always present; users can add their own on top.
+const SCHEMA = (dateHint, fields) => {
+    const properties = {
         title: { type: 'string', description: 'A 2 to 5 word plain-language description of the file contents, lowercase, no punctuation' },
         entity: { type: 'string', description: 'The vendor, company, or person tied to the document, or an empty string if none is identifiable' },
         date: { type: 'string', description: dateHint || DEFAULT_DATE_HINT },
         type: { type: 'string', description: 'One or two words describing the document type, like invoice, receipt, screenshot, photo, or resume' }
-    },
-    required: ['title', 'entity', 'date', 'type'],
-    additionalProperties: false
-});
+    };
+    for (const f of fields || []) {
+        if (!f.key || properties[f.key]) continue; // never overwrite a built-in field
+        properties[f.key] = { type: 'string', description: f.description || 'The ' + f.key.replace(/[_-]+/g, ' ') + ' for this file, or an empty string if not applicable' };
+    }
+    return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
+};
+const fieldKeys = (fields) => {
+    const custom = (fields || []).map((f) => f.key).filter((k) => k && !['title', 'entity', 'date', 'type'].includes(k));
+    return ['title', 'entity', 'date', 'type', ...custom.filter((k, i) => custom.indexOf(k) === i)];
+};
 
-function prompt(name, text, dateHint, extra) {
-    let p = 'You name files. Look at the attached file and describe it using the required fields: '
-        + 'title (2 to 5 word description), entity (vendor, person or company, or empty), '
-        + 'date (' + (dateHint || DEFAULT_DATE_HINT) + '), and type (one or two words like invoice, receipt, screenshot, photo, resume). '
+function prompt(name, text, dateHint, extra, fields) {
+    const parts = [
+        'title (2 to 5 word description)',
+        'entity (vendor, person or company, or empty)',
+        'date (' + (dateHint || DEFAULT_DATE_HINT) + ')',
+        'type (one or two words like invoice, receipt, screenshot, photo, resume)'
+    ];
+    for (const f of fields || []) parts.push(f.key.replace(/[_-]+/g, ' ') + ' (' + (f.description || 'a short value') + ')');
+    let p = 'You name files. Look at the attached file and describe it using the required fields: ' + parts.join(', ') + '. '
         + 'Lowercase plain words, no punctuation. Never guess a date; use an empty string if none is visible.';
     if (extra && extra.trim()) p += ' Additional instructions: ' + extra.trim();
     p += ' Original filename: ' + name + (text ? '\n\nExtracted text:\n' + text : '');
     return p;
 }
-function parse(t) {
+function parse(t, keys) {
     const a = t.indexOf('{'), b = t.lastIndexOf('}');
     if (a < 0 || b < a) throw new Error('Model did not return JSON: ' + t.slice(0, 120));
     const j = JSON.parse(t.slice(a, b + 1));
-    return { title: String(j.title || ''), entity: String(j.entity || ''), date: String(j.date || ''), type: String(j.type || '') };
+    const out = {};
+    for (const k of keys) out[k] = String(j[k] || '');
+    return out;
 }
-async function timed(ms, label, fn) {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+async function timed(ms, label, signal, fn) {
+    const ctl = new AbortController();
+    const onAbort = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    const t = setTimeout(() => ctl.abort(), ms);
     try { return await fn(ctl.signal); }
     catch (e) {
-        if (e.name === 'AbortError') throw new Error(label + ' timed out after ' + ms / 1000 + ' seconds.');
-        throw new Error(e.cause?.message ? e.message + ': ' + e.cause.message : e.message);
-    } finally { clearTimeout(t); }
+        if (e.name === 'AbortError') {
+            // Distinguish a user cancellation from our own timeout.
+            if (signal && signal.aborted) throw new Error('Cancelled.');
+            throw new Error(label + ' timed out after ' + ms / 1000 + ' seconds.');
+        }
+        const err = new Error(e.cause?.message ? e.message + ': ' + e.cause.message : e.message);
+        // Keep the HTTP status so attempt() can decide whether the call is worth retrying.
+        if (e.status) err.status = e.status;
+        throw err;
+    } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
 }
-async function cloud(s, req) {
+const httpError = (label, status, detail) => {
+    const e = new Error(label + ' ' + status + ': ' + detail);
+    e.status = status;
+    return e;
+};
+// Rate limiting, overload, and transient server failures are worth waiting out.
+const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
+const RETRIES = 3;
+async function attempt(fn) {
+    for (let i = 0; ; i++) {
+        try { return await fn(); }
+        catch (e) {
+            if (i >= RETRIES - 1 || !RETRY_STATUS.has(e.status)) throw e;
+            // Exponential backoff with jitter so parallel workers do not retry in lockstep.
+            await new Promise((r) => setTimeout(r, Math.min(8000, 500 * 2 ** i) + Math.random() * 250));
+        }
+    }
+}
+// `req.kind` is decided by the renderer: 'document' (native PDF), 'image' (bytes the
+// provider accepts), or 'text' (extracted from a text/Office/spreadsheet file).
+async function cloud(s, req, signal) {
     const key = getKey(s);
     if (!key) throw new Error('No Anthropic API key saved. Add one in Settings.');
-    const data = Buffer.from(req.bytes).toString('base64');
-    const block = req.ext === 'pdf'
-        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
-        : { type: 'image', source: { type: 'base64', media_type: MIME[req.ext], data } };
-    return timed(CLOUD_TIMEOUT_MS, 'API request', async (signal) => {
+    const fields = req.fields || [];
+    const content = [];
+    if (req.kind === 'text') {
+        content.push({ type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) });
+    } else {
+        const data = Buffer.from(req.bytes).toString('base64');
+        content.push(req.kind === 'document'
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+            : { type: 'image', source: { type: 'base64', media_type: MIME[req.ext], data } });
+        content.push({ type: 'text', text: prompt(req.name, '', req.dateHint, req.extra, fields) });
+    }
+    return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
         const r = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST', signal,
+            method: 'POST', signal: sig,
             headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
             body: JSON.stringify({
                 model: s.model, max_tokens: 300,
-                messages: [{ role: 'user', content: [block, { type: 'text', text: prompt(req.name, '', req.dateHint, req.extra) }] }],
-                output_config: { format: { type: 'json_schema', schema: SCHEMA(req.dateHint) } }
+                messages: [{ role: 'user', content }],
+                output_config: { format: { type: 'json_schema', schema: SCHEMA(req.dateHint, fields) } }
             })
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error('API error ' + r.status + ': ' + (j.error?.message || r.statusText));
-        return parse((j.content || []).map((c) => c.text || '').join(''));
+        if (!r.ok) throw httpError('API error', r.status, j.error?.message || r.statusText);
+        return parse((j.content || []).map((c) => c.text || '').join(''), fieldKeys(fields));
     });
 }
 
@@ -99,36 +150,72 @@ async function ensureServer(s) {
     p.on('exit', () => { if (srv === p) srv = null; });
     for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
         if (!srv) throw new Error('llama-server exited while loading. Check that the model and mmproj files match. ' + srvErr.trim().split('\n').pop());
-        try { if ((await fetch('http://127.0.0.1:' + PORT + '/health')).ok) return; } catch { }
+        try { if ((await fetch('http://127.0.0.1:' + PORT + '/health')).ok) return; } catch { /* server not accepting connections yet */ }
         await new Promise((r) => setTimeout(r, 1000));
     }
     throw new Error('Local model took more than 3 minutes to load.');
 }
-async function local(s, req) {
+async function local(s, req, signal) {
     await ensureServer(s);
+    const fields = req.fields || [];
     const img = (buf, mime) => ({ type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + Buffer.from(buf).toString('base64') } });
-    const imgs = req.ext === 'pdf' ? (req.pages || []).map((b) => img(b, 'image/jpeg')) : [img(req.bytes, MIME[req.ext])];
-    return timed(LOCAL_TIMEOUT_MS, 'Local model request', async (signal) => {
+    let imgs = [];
+    if (req.kind === 'image') imgs = [img(req.bytes, MIME[req.ext])];
+    else if (req.kind === 'document') imgs = (req.pages || []).map((b) => img(b, 'image/jpeg'));
+    return timed(LOCAL_TIMEOUT_MS, 'Local model request', signal, async (sig) => {
         const r = await fetch('http://127.0.0.1:' + PORT + '/v1/chat/completions', {
-            method: 'POST', signal, headers: { 'content-type': 'application/json' },
+            method: 'POST', signal: sig, headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 max_tokens: 300, temperature: 0.1,
-                messages: [{ role: 'user', content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra) }] }],
+                messages: [{ role: 'user', content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) }] }],
                 // llama-server (OpenAI-compatible) grammar-constrains output to this schema when supported.
                 // Falls back harmlessly on older builds since parse() below still extracts JSON from free text.
-                response_format: { type: 'json_schema', json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint) } }
+                response_format: { type: 'json_schema', json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) } }
             })
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error('Local server error ' + r.status + ': ' + (j.error?.message || r.statusText));
-        return parse(j.choices?.[0]?.message?.content || '');
+        if (!r.ok) throw httpError('Local server error', r.status, j.error?.message || r.statusText);
+        return parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields));
     });
 }
 
+// Track in-flight requests so the renderer's Cancel button can abort them.
+const inflight = new Set();
 ipcMain.handle('analyze', async (_e, req) => {
     const s = read();
+    const ctl = new AbortController();
+    inflight.add(ctl);
     req = { ...req, dateHint: DATE_HINTS[req.dateFormat] || DEFAULT_DATE_HINT };
-    try { return { ok: true, info: await (s.provider === 'local' ? local(s, req) : cloud(s, req)) }; }
+    try { return { ok: true, info: await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal))) }; }
+    catch (e) { return { ok: false, error: e.message }; }
+    finally { inflight.delete(ctl); }
+});
+ipcMain.handle('abort', () => { for (const c of inflight) c.abort(); return true; });
+
+// sips ships with macOS and handles the formats Chromium cannot decode
+// (TIFF, HEIC/HEIF), which the renderer's canvas-based conversion cannot reach.
+const SIPS = '/usr/bin/sips';
+function sipsToJpeg(buf) {
+    return new Promise((resolve, reject) => {
+        if (!fs.existsSync(SIPS)) return reject(new Error('TIFF and HEIC conversion needs macOS sips.'));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'afr-'));
+        const src = path.join(dir, 'input'), dst = path.join(dir, 'output.jpg');
+        const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+        try { fs.writeFileSync(src, buf); } catch (e) { cleanup(); return reject(e); }
+        const p = spawn(SIPS, ['-s', 'format', 'jpeg', src, '--out', dst]);
+        let err = '';
+        p.stderr.on('data', (d) => { err = (err + d).slice(-300); });
+        p.on('error', (e) => { cleanup(); reject(e); });
+        p.on('exit', (code) => {
+            try {
+                if (code !== 0 || !fs.existsSync(dst)) return reject(new Error('Could not convert the image: ' + err.trim()));
+                resolve(fs.readFileSync(dst));
+            } finally { cleanup(); }
+        });
+    });
+}
+ipcMain.handle('convert', async (_e, buf) => {
+    try { return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf)) }; }
     catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('settings:get', () => {
