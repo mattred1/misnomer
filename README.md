@@ -100,9 +100,11 @@ Most providers expose an OpenAI-compatible endpoint, so adding one is a single e
 
 ### Token and cost estimates
 
-Token usage is read from every provider response and totalled for the current batch. The estimate uses a built-in list-price table in `renderer/providers.js` covering common Anthropic, OpenAI, Gemini, DeepSeek, xAI, Mistral, and Together AI models (reviewed 2026-10-17). Models that are not in the table still show token counts, just without a dollar estimate; OpenRouter and Groq are token-only because their per-model prices vary or were not available. The local engine reports tokens with no API cost.
+Token usage is read from every provider response and totalled for the current batch. Costs come from `pricing/pricing.json`, which combines exact model prices generated from the [LiteLLM pricing dataset](https://github.com/BerriAI/litellm) with a small set of curated family fallbacks. A scheduled GitHub Action refreshes the exact entries weekly and opens a PR; you can run the same update locally with `npm run pricing:update`.
 
-Prices are estimates, not invoices — vendors change them and add new models regularly. Check your provider's billing page for exact charges.
+Models that are not in either source still show token counts, just without a dollar estimate; OpenRouter is token-only because its per-model prices vary. The local engine reports tokens with no API cost. Prices are estimates, not invoices — vendors change them and add new models regularly, so check your provider's billing page for exact charges.
+
+GitHub disables scheduled workflows after 60 days without repository activity. If that happens, re-enable **Update pricing** from the Actions tab or run it manually with **Run workflow**.
 
 > Upgrading from a single-provider build? Your existing key and model are migrated to Anthropic automatically on first launch.
 
@@ -134,6 +136,7 @@ Values are lowercased, accent-stripped, and separated by the chosen separator. E
 ```bash
 npm test      # unit tests for every pure module (node --test)
 npm run lint  # ESLint
+npm run pricing:update # refresh model prices from the LiteLLM dataset
 npm run format # Prettier, writes changes in place
 ```
 
@@ -170,12 +173,20 @@ renderer/
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
   app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews, usage totals
- test/
+pricing/
+  pricing.json         Exact model prices plus curated family fallbacks
+scripts/
+  pricing-lib.js       Provider mapping and validation for the pricing updater
+  update-pricing.js    Refreshes pricing.json from the LiteLLM dataset
+.github/workflows/
+  pricing.yml          Weekly pricing refresh that opens a PR
+test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
   providers.test.js    Unit tests for providers.js
   rename.test.js       Unit tests for rename.js
   exif.test.js         Unit tests for exif.js
+  pricing.test.js      Unit tests for pricing data and the updater helpers
 eslint.config.js       ESLint flat config
 ```
 
@@ -190,7 +201,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 ### Tier 1 — Foundation
 
 - [x] **Extract naming logic into a testable module** — `renderer/naming.js`, loaded as a UMD script so Node can also `require` it
-- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (91 tests, zero new runtime dependencies)
+- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (98 tests, zero new runtime dependencies)
 - [x] **Add ESLint + Prettier** with `lint` and `format` npm scripts
 - [x] **Add a LICENSE file** (MIT)
 - [ ] **Add a screenshot/GIF** of the UI to this README — needs a capture from a running instance
@@ -223,6 +234,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Keyboard and screen-reader basics** — focus rings, keyboard-operable drop zone and previews, labelled dialogs, live status announcements, and a focus trap that restores focus when dialogs close
 - [x] **Responsive filesystem work** — folder scans, file reads, saves, and `sips` conversion no longer block the main thread
 - [x] **Token and cost estimates** — input/output tokens for every engine, plus estimated USD cost for models in the built-in price table; local runs show no API cost
+- [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
 - [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
 - [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
 - [ ] **Keyboard shortcuts**

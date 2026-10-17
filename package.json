@@ -9,6 +9,7 @@
         "dist": "electron-builder --mac",
         "test": "node --test",
         "lint": "eslint .",
+        "pricing:update": "node scripts/update-pricing.js",
         "format": "prettier --write ."
     },
     "build": {
@@ -18,6 +19,7 @@
             "main.js",
             "preload.js",
             "renderer/**/*",
+            "pricing/**/*",
             "node_modules/**/*"
         ],
         "mac": {

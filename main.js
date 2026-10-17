@@ -6,6 +6,10 @@ const Exif = require('./renderer/exif.js');
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{date}-{entity}-{type}-{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
+// Bundled model prices, refreshed by scripts/update-pricing.js. If the file is
+// missing the app still reports tokens, just without a cost estimate.
+let PRICING = { schemaVersion: 0, families: {}, models: {} };
+try { PRICING = require('./pricing/pricing.json'); } catch { /* token-only mode */ }
 // A factory so each read gets its own objects rather than sharing mutable defaults.
 const DEF = () => ({
     engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
@@ -320,7 +324,7 @@ ipcMain.handle('analyze', async (_e, req) => {
         if (result.usage) {
             const local = s.provider === 'local';
             result.usage.local = local;
-            result.usage.cost = local ? 0 : estimateCost(s.provider, (s.models || {})[s.provider], result.usage.input, result.usage.output);
+            result.usage.cost = local ? 0 : estimateCost(PRICING, s.provider, (s.models || {})[s.provider], result.usage.input, result.usage.output);
         }
         // Only fill a date the model left empty; a visible printed date always wins.
         if (req.kind === 'image' && !info.date) {

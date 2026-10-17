@@ -1,0 +1,55 @@
+name: Update pricing
+
+# Regenerates pricing/pricing.json from the LiteLLM dataset and opens a PR.
+# The curated `families` fallbacks in the file are preserved.
+#
+# Notes:
+# - Scheduled workflows are disabled by GitHub after 60 days without repo activity.
+# - PRs opened with GITHUB_TOKEN do not trigger other workflows; this job runs
+#   lint and tests itself before opening the PR.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pricing-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run pricing:update
+      - run: npm run lint
+      - run: npm test
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: refresh model pricing'
+          title: 'chore: refresh model pricing'
+          body: |
+            Automated refresh of `pricing/pricing.json` from the
+            [LiteLLM pricing dataset](https://github.com/BerriAI/litellm).
+
+            The updater validates the data, and this workflow ran lint and the
+            full test suite before opening the PR. Curated `families` fallbacks
+            are preserved.
+          branch: chore/pricing-refresh
+          base: main
+          delete-branch: true
+          add-paths: pricing/pricing.json

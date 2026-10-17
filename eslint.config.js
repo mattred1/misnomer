@@ -5,7 +5,7 @@ module.exports = [
     js.configs.recommended,
     { ignores: ['node_modules/**', 'dist/**', 'release/**'] },
     {
-        files: ['main.js', 'preload.js', 'test/**/*.js', 'eslint.config.js'],
+        files: ['main.js', 'preload.js', 'test/**/*.js', 'scripts/**/*.js', 'eslint.config.js'],
         languageOptions: {
             ecmaVersion: 2023,
             sourceType: 'commonjs',

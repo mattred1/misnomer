@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { LIST, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost } = require('../renderer/providers.js');
+const pricing = require('../pricing/pricing.json');
 
 const BASE = () => ({
     engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
@@ -99,24 +100,36 @@ test('googleSchema: strips additionalProperties at every depth', () => {
     assert.deepEqual(out.required, ['title']);
 });
 
-test('estimateCost: prices known models from every supported provider', () => {
+test('estimateCost: exact model prices win over family patterns', () => {
+    const data = {
+        models: { openai: { 'gpt-test': { input: 2, output: 10 } } },
+        families: { openai: [{ match: 'gpt-test', input: 9, output: 9 }] }
+    };
     const close = (a, b) => Math.abs(a - b) < 1e-9;
-    assert.ok(close(estimateCost('anthropic', 'claude-sonnet-5', 1e6, 0), 2));
-    assert.ok(close(estimateCost('anthropic', 'claude-opus-4-5-20251101', 0, 1e6), 25));
-    assert.ok(close(estimateCost('openai', 'gpt-6-luna', 1e6, 1e6), 0.6));
-    assert.ok(close(estimateCost('google', 'models/gemini-2.5-flash', 1e6, 0), 0.3));
-    assert.ok(close(estimateCost('deepseek', 'deepseek-flash', 0, 1e6), 1.2));
-    assert.ok(close(estimateCost('xai', 'grok-4.7', 1e6, 0), 2));
-    assert.ok(close(estimateCost('mistral', 'mistral-large-latest', 1e6, 0), 0.5));
-    assert.ok(close(estimateCost('together', 'meta-llama/Llama-3.3-70B-Instruct-Turbo', 1e6, 0), 1.04));
+    assert.ok(close(estimateCost(data, 'openai', 'gpt-test', 1e6, 0), 2));
+    assert.ok(close(estimateCost(data, 'openai', 'GPT-TEST', 0, 1e6), 10));
 });
 
-test('estimateCost: returns null when the model or provider has no price table', () => {
-    assert.equal(estimateCost('openrouter', 'anything', 100, 100), null);
-    assert.equal(estimateCost('groq', 'llama-3.3-70b', 100, 100), null);
-    assert.equal(estimateCost('local', 'whatever', 100, 100), null);
-    assert.equal(estimateCost('anthropic', 'claude-unknown', 100, 100), null);
-    assert.equal(estimateCost('openai', '', 100, 100), null);
+test('estimateCost: falls back to family patterns and normalizes models/ prefixes', () => {
+    const data = { models: {}, families: { google: [{ match: 'gemini-2\\.5-flash', input: 0.3, output: 2.5 }] } };
+    const close = (a, b) => Math.abs(a - b) < 1e-9;
+    assert.ok(close(estimateCost(data, 'google', 'models/gemini-2.5-flash', 1e6, 0), 0.3));
+    assert.ok(close(estimateCost(data, 'google', 'gemini-2.5-flash', 0, 1e6), 2.5));
+});
+
+test('estimateCost: returns null for unknown models, providers, and missing data', () => {
+    assert.equal(estimateCost({ models: {}, families: {} }, 'openrouter', 'anything', 100, 100), null);
+    assert.equal(estimateCost({ models: {}, families: {} }, 'anthropic', 'claude-unknown', 100, 100), null);
+    assert.equal(estimateCost(null, 'anthropic', 'claude-sonnet-5', 100, 100), null);
+});
+
+test('estimateCost: bundled pricing covers every priced provider', () => {
+    for (const provider of ['anthropic', 'openai', 'google', 'deepseek', 'xai', 'mistral', 'together']) {
+        assert.ok(pricing.models[provider], provider + ' is missing exact model prices');
+        assert.ok(Object.keys(pricing.models[provider]).length > 0, provider + ' has no model prices');
+    }
+    // Curated family fallbacks still resolve models that the dataset may not list.
+    assert.equal(typeof estimateCost(pricing, 'anthropic', 'claude-opus-4-5', 1000, 1000), 'number');
 });
 
 test('migrateSettings: first run yields the defaults', () => {
