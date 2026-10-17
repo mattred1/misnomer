@@ -18,7 +18,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
 - **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
 - **Naming templates** — compose names from `{date}`, `{entity}`, `{type}`, and `{title}` with a configurable separator, plus any custom fields you define.
-- **Live template preview** — see the filename your template produces, with unknown placeholders flagged before you run a batch.
+- **Live template preview** — see the filename your template produces, with unknown placeholders flagged and the sample date rendered in the selected date format.
 - **Date formats** — `YYYY-MM-DD`, `MM-DD-YYYY`, `DD-MM-YYYY`, `YYYYMMDD`, `YYYY-MM`, or `YYYY`.
 - **Custom fields** — define your own values (e.g. `amount`, `category`) and use them as template placeholders; the request schema is generated to match.
 - **Custom instructions** — add free-text guidance per batch (e.g. "use the client name from the letterhead, not the sender").
@@ -27,9 +27,11 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Export** — save a copy of a single row, or download the whole batch as a ZIP.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
 - **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
-- **Thumbnail previews** — every image and PDF row shows a thumbnail of the first page; click it for a larger view.
+- **Thumbnail previews** — every image and PDF row shows a thumbnail of its first page, generated only when the row scrolls into view and cached for reuse. Click or press Enter for a larger view; text and Office rows show a file-type badge.
+- **Responsive on large batches** — folder scans, file reads, saves, and format conversions run asynchronously in the main process, and thumbnails decode a few at a time instead of all at once.
+- **Keyboard and screen-reader friendly** — visible focus rings, a keyboard-operable drop zone and previews, labelled dialogs, and polite live announcements for status and progress.
 - **Undo** — every rename batch is recorded; walk the stack backwards to restore original names.
-- **Folder support** — drop a folder or use **Choose a folder…** and it is scanned recursively.
+- **Folder support** — drop a folder or use **Choose a folder…** and it is scanned recursively in the background while the window stays responsive.
 - **Progress and cancel** — a running count of processed files, and a Cancel button that aborts the in-flight request.
 - **Pause/resume** — an error pauses the batch so you can skip the offending file and continue.
 - **Automatic retry** — rate limits and transient server errors (429, 5xx) are retried up to 3 times with exponential backoff and jitter before a row is marked failed.
@@ -47,9 +49,9 @@ Everything runs locally except the files you send to a cloud model. Your API key
 | Markup | `.html`, `.htm`, `.xml`, `.rtf` | Tagged content is stripped down to readable text before being sent |
 | Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text |
 
-Text is capped at 12,000 characters per file before it goes into a prompt. Files with any other extension are skipped, and the drop zone lists what was rejected.
+Text is capped at 12,000 characters per file before it goes into a prompt. The file picker is limited to these formats, and the drop zone lists anything else as skipped.
 
-Photos with no printed or visible date fall back to the capture date stored in EXIF metadata. The reader handles JPEG, PNG, WebP, and TIFF directly, and scans other containers such as HEIC for the EXIF block. The model's date always wins when it can see one.
+Photos with no printed or visible date fall back to the capture date stored in EXIF metadata. The reader handles JPEG, PNG, WebP, and TIFF directly, and scans other containers such as HEIC for the EXIF block. The fallback only fills an empty date — a date the model can see always wins — and the result is formatted with the batch's date-format setting.
 
 ## Requirements
 
@@ -99,11 +101,12 @@ Most providers expose an OpenAI-compatible endpoint, so adding one is a single e
 
 ### Using it
 
-1. Drop files or a folder onto the drop zone, click it to browse, or use **Choose a folder…**. Folders are scanned recursively.
+1. Drop files or a folder onto the drop zone, click it to browse, or use **Choose a folder…**. The picker accepts every supported format, and folders are scanned recursively.
 2. Adjust the template, separator, date format, and any custom instructions.
 3. Click **Generate names**. Each row updates as it finishes.
 4. Edit any name you don't like.
-5. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
+5. Click a thumbnail (or focus it and press Enter) to preview an image or PDF; Esc or a click outside closes it.
+6. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
 
 Renames are confirmed before anything happens and never overwrite an existing file: if the name is already taken in that folder, it gets a `-2`, `-3` suffix. **Undo rename** reverts the most recent batch and can be pressed repeatedly to walk back through the session.
 
@@ -122,7 +125,7 @@ Values are lowercased, accent-stripped, and separated by the chosen separator. E
 ## Development
 
 ```bash
-npm test      # unit tests for the naming logic (node --test)
+npm test      # unit tests for every pure module (node --test)
 npm run lint  # ESLint
 npm run format # Prettier, writes changes in place
 ```
@@ -137,6 +140,8 @@ The logic worth testing lives in five dependency-free UMD modules that work in b
 
 Each is covered by its own test file. Run the tests before changing any of them.
 
+Filesystem work in the main process — recursive folder scans, file reads, directory listings, saves, and `sips` conversion — is asynchronous, so the UI stays responsive. Thumbnails are produced lazily for visible rows, three at a time, and cached by path.
+
 ## Building a distributable
 
 ```bash
@@ -148,16 +153,16 @@ This runs `electron-builder --mac` and produces a DMG in `dist/`. The build is *
 ## Project layout
 
 ```
-main.js                Electron main process: IPC handlers, model calls, settings, file I/O
+main.js                Electron main process: IPC handlers, model calls, settings, async file I/O
 preload.js             contextBridge surface exposed to the renderer as window.api
 renderer/
-  index.html           Markup and all styling
+  index.html           Markup, styling, and the preview dialog
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
   providers.js         Provider registry, request shapes, model parsing, settings migration
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
-  app.js               UI state, drag-and-drop, PDF prep, batching, format conversion
+  app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews
  test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
@@ -178,7 +183,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 ### Tier 1 — Foundation
 
 - [x] **Extract naming logic into a testable module** — `renderer/naming.js`, loaded as a UMD script so Node can also `require` it
-- [x] **Add unit tests** for the naming logic using the built-in `node --test` runner (24 tests, zero new runtime dependencies)
+- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (89 tests, zero new runtime dependencies)
 - [x] **Add ESLint + Prettier** with `lint` and `format` npm scripts
 - [x] **Add a LICENSE file** (MIT)
 - [ ] **Add a screenshot/GIF** of the UI to this README — needs a capture from a running instance
@@ -200,7 +205,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Progress indicator and cancel** — a "3 of 20" counter plus a Cancel button that aborts the in-flight request
 - [ ] **RAW camera formats** — the `sips` conversion path could cover `.cr2`, `.nef`, `.arw`, etc. on macOS
 - [x] **True in-place rename** with `fs.rename`, preserving the source folder, plus collision handling
-- [x] **Folder drag-and-drop** (recursive) — dropped folders and **Choose a folder…** are walked by the main process
+- [x] **Folder drag-and-drop** (recursive) — dropped folders and **Choose a folder…** are walked asynchronously by the main process
 - [x] **Undo** — a session stack of rename batches, replayed in reverse with conflicts reported
 
 ### Tier 3 — Polish and distribution
@@ -208,17 +213,23 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Disk-aware dedupe** — renames consult the target folder, so an existing file is never overwritten (exported copies still go through the OS save dialog)
 - [x] **EXIF capture-date fallback** for photos with no visible date
 - [x] **Thumbnail previews** in the results table
+- [x] **Lazy thumbnail generation** — only rows near the viewport decode, three at a time, then cache
+- [x] **Keyboard and screen-reader basics** — focus rings, keyboard-operable drop zone and previews, labelled dialogs, live status announcements
+- [x] **Responsive filesystem work** — folder scans, file reads, saves, and `sips` conversion no longer block the main thread
 - [ ] **Token/cost display** per batch for the Anthropic path
-- [ ] **Accessibility pass** — `aria-live` on status updates, focus trap in the settings dialog
+- [ ] **Focus trap in the Settings dialog** — Tab and Shift+Tab should stay inside the modal, and focus should return to the Settings button on close
+- [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
+- [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
 - [ ] **Keyboard shortcuts**
 - [ ] **Export/import presets and settings** to JSON for sharing and version control
+- [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
 - [ ] **Code signing + notarization** for the macOS DMG (unsigned builds trigger Gatekeeper warnings)
 - [ ] **Windows and Linux build targets**
 - [ ] **Auto-update** via `electron-updater`
 - [ ] **GitHub Actions CI** — run tests on PR and publish signed releases on tag
 - [ ] **Internationalization** of the prompt and UI
 - [ ] **Headless CLI / watch-folder mode** for scripting and scheduled runs
-- [ ] **Network-aware concurrency** — the current worker count is hardcoded (1 local, 2 cloud) and should be configurable
+- [ ] **Configurable concurrency** — the worker count is hardcoded (1 local, 2 cloud); expose local/cloud concurrency in Settings and adapt to provider rate limits
 
 ---
 
