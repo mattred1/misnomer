@@ -17,6 +17,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Live model list** — the model dropdown is populated from the selected provider's own catalogue, so only models your key can actually reach are offered.
 - **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
 - **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
+- **Usage and cost** — every engine reports input and output token counts, totalled across the batch, with an estimated cost when the selected model has a known list price. Local runs show no API cost.
 - **Naming templates** — compose names from `{date}`, `{entity}`, `{type}`, and `{title}` with a configurable separator, plus any custom fields you define.
 - **Live template preview** — see the filename your template produces, with unknown placeholders flagged and the sample date rendered in the selected date format.
 - **Date formats** — `YYYY-MM-DD`, `MM-DD-YYYY`, `DD-MM-YYYY`, `YYYYMMDD`, `YYYY-MM`, or `YYYY`.
@@ -97,13 +98,19 @@ npm start
 
 Most providers expose an OpenAI-compatible endpoint, so adding one is a single entry in `renderer/providers.js`.
 
+### Token and cost estimates
+
+Token usage is read from every provider response and totalled for the current batch. The estimate uses a built-in list-price table in `renderer/providers.js` covering common Anthropic, OpenAI, Gemini, DeepSeek, xAI, Mistral, and Together AI models (reviewed 2026-10-17). Models that are not in the table still show token counts, just without a dollar estimate; OpenRouter and Groq are token-only because their per-model prices vary or were not available. The local engine reports tokens with no API cost.
+
+Prices are estimates, not invoices — vendors change them and add new models regularly. Check your provider's billing page for exact charges.
+
 > Upgrading from a single-provider build? Your existing key and model are migrated to Anthropic automatically on first launch.
 
 ### Using it
 
 1. Drop files or a folder onto the drop zone, click it to browse, or use **Choose a folder…**. The picker accepts every supported format, and folders are scanned recursively.
 2. Adjust the template, separator, date format, and any custom instructions.
-3. Click **Generate names**. Each row updates as it finishes.
+3. Click **Generate names**. Each row updates as it finishes, and the running token total (with a cost estimate where available) appears next to the progress counter.
 4. Edit any name you don't like.
 5. Click a thumbnail (or focus it and press Enter) to preview an image or PDF; Esc or a click outside closes it.
 6. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
@@ -153,16 +160,16 @@ This runs `electron-builder --mac` and produces a DMG in `dist/`. The build is *
 ## Project layout
 
 ```
-main.js                Electron main process: IPC handlers, model calls, settings, async file I/O
+main.js                Electron main process: IPC handlers, model calls, usage capture, settings, async file I/O
 preload.js             contextBridge surface exposed to the renderer as window.api
 renderer/
   index.html           Markup, styling, and the preview dialog
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
-  providers.js         Provider registry, request shapes, model parsing, settings migration
+  providers.js         Provider registry, request shapes, model parsing, pricing, settings migration
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
-  app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews
+  app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews, usage totals
  test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
@@ -183,7 +190,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 ### Tier 1 — Foundation
 
 - [x] **Extract naming logic into a testable module** — `renderer/naming.js`, loaded as a UMD script so Node can also `require` it
-- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (89 tests, zero new runtime dependencies)
+- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (91 tests, zero new runtime dependencies)
 - [x] **Add ESLint + Prettier** with `lint` and `format` npm scripts
 - [x] **Add a LICENSE file** (MIT)
 - [ ] **Add a screenshot/GIF** of the UI to this README — needs a capture from a running instance
@@ -203,7 +210,6 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Arbitrary template fields** — user-defined placeholders such as `{amount}` or `{category}`, with the request schema and prompt generated to match
 - [x] **Template preview + validation** — shows the resulting filename and flags unknown `{placeholders}`
 - [x] **Progress indicator and cancel** — a "3 of 20" counter plus a Cancel button that aborts the in-flight request
-- [ ] **RAW camera formats** — the `sips` conversion path could cover `.cr2`, `.nef`, `.arw`, etc. on macOS
 - [x] **True in-place rename** with `fs.rename`, preserving the source folder, plus collision handling
 - [x] **Folder drag-and-drop** (recursive) — dropped folders and **Choose a folder…** are walked asynchronously by the main process
 - [x] **Undo** — a session stack of rename batches, replayed in reverse with conflicts reported
@@ -214,10 +220,9 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **EXIF capture-date fallback** for photos with no visible date
 - [x] **Thumbnail previews** in the results table
 - [x] **Lazy thumbnail generation** — only rows near the viewport decode, three at a time, then cache
-- [x] **Keyboard and screen-reader basics** — focus rings, keyboard-operable drop zone and previews, labelled dialogs, live status announcements
+- [x] **Keyboard and screen-reader basics** — focus rings, keyboard-operable drop zone and previews, labelled dialogs, live status announcements, and a focus trap that restores focus when dialogs close
 - [x] **Responsive filesystem work** — folder scans, file reads, saves, and `sips` conversion no longer block the main thread
-- [ ] **Token/cost display** per batch for the Anthropic path
-- [ ] **Focus trap in the Settings dialog** — Tab and Shift+Tab should stay inside the modal, and focus should return to the Settings button on close
+- [x] **Token and cost estimates** — input/output tokens for every engine, plus estimated USD cost for models in the built-in price table; local runs show no API cost
 - [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
 - [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
 - [ ] **Keyboard shortcuts**

@@ -114,7 +114,7 @@ async function addPaths(paths) {
         if (!OK_EXT.includes(file.ext)) { rejected.push(file.name); continue; }
         const f = {
             id: ++uid, path: file.path, dir: file.dir, ext: file.ext,
-            original: file.name, name: file.name.replace(/\.[^.]+$/, ''), st: 'queued', note: '', renamed: false
+            original: file.name, name: file.name.replace(/\.[^.]+$/, ''), st: 'queued', note: '', renamed: false, usage: null
         };
         files.push(f); row(f);
     }
@@ -247,7 +247,7 @@ function elementPreview(blob, max) {
 }
 // Clicking a thumbnail opens a larger view of the same first page.
 async function showPreview(f) {
-    const img = $('#imgview');
+    const img = $('#imgview'), opener = document.activeElement;
     $('#imgname').textContent = f.original;
     if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
     img.removeAttribute('src');
@@ -265,7 +265,7 @@ async function showPreview(f) {
     if (!src) { $('#msg').textContent = 'Could not preview ' + f.original + '.'; return; }
     img.alt = f.original;
     img.src = src;
-    if (!$('#imgdlg').open) $('#imgdlg').showModal();
+    if (!$('#imgdlg').open) openDialog($('#imgdlg'), opener);
 }
 function paint(f) {
     const tr = $('#r' + f.id); if (!tr) return;
@@ -286,6 +286,30 @@ function hints() {
         h.textContent = notes.join(' \u00b7 ');
     });
 }
+function fmtTokens(n) {
+    const v = Number(n) || 0;
+    if (v >= 1e6) return (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'k';
+    return String(v);
+}
+// Batch totals across every row that returned usage. Cost is shown only when
+// each provider response could be matched to a known list price.
+function renderUsage() {
+    const used = files.filter((f) => f.usage);
+    const el = $('#usage');
+    if (!used.length) { el.textContent = ''; return; }
+    let input = 0, output = 0, cost = 0, priced = 0;
+    for (const f of used) {
+        input += f.usage.input || 0;
+        output += f.usage.output || 0;
+        if (typeof f.usage.cost === 'number') { cost += f.usage.cost; priced++; }
+    }
+    const parts = [fmtTokens(input) + ' in', fmtTokens(output) + ' out'];
+    if (used.every((f) => f.usage.local)) parts.push('local, no API cost');
+    else if (priced === used.length) parts.push('est. $' + (cost > 0 && cost < 0.0001 ? '<0.0001' : cost.toFixed(4)));
+    else if (priced) parts.push('est. $' + cost.toFixed(4) + ' for ' + priced + ' of ' + used.length + ' files');
+    el.textContent = 'Usage: ' + parts.join(' \u00b7 ');
+}
 function sync() {
     const todo = files.some((f) => f.st !== 'done' && f.st !== 'skipped');
     $('#go').disabled = busy || !todo; $('#go2').disabled = busy || !todo;
@@ -301,6 +325,7 @@ function sync() {
     const finished = files.filter((f) => f.st === 'done' || f.st === 'error' || f.st === 'skipped').length;
     $('#prog').textContent = busy && files.length ? finished + ' of ' + files.length + ' processed' : '';
     hints();
+    renderUsage();
 }
 async function save(name, buf) { try { if (await api.save(name, buf)) $('#msg').textContent = 'Saved ' + name; } catch (e) { $('#msg').textContent = 'Save failed: ' + e.message; } }
 
@@ -358,7 +383,7 @@ async function analyze(f) {
     if (S.pdfMode === 'pages' && p.kind === 'document') Object.assign(req, await pdfPrep(p.bytes.slice(0)));
     const r = await api.analyze(req);
     if (!r.ok) throw new Error(r.error);
-    return r.info;
+    return r;
 }
 async function run() {
     S = await api.getSettings(); halt = false; cancelled = false; haltFile = null; busy = true;
@@ -367,9 +392,11 @@ async function run() {
     const sep = $('#sep').value;
     const worker = async () => {
         for (let f; !halt && (f = q.shift());) {
-            f.st = 'working'; paint(f); sync();
+            f.st = 'working'; f.usage = null; paint(f); sync();
             try {
-                f.info = await analyze(f);
+                const r = await analyze(f);
+                f.info = r.info;
+                f.usage = r.usage || null;
                 // Surface where the date came from, since the model did not read it off the image.
                 if (f.info.dateSource === 'exif') f.note = 'Date taken from the photo\u2019s EXIF metadata';
                 if (!f.edited) f.name = build(f.info, $('#tpl').value, sep);
@@ -501,6 +528,35 @@ $('#imgdlg').addEventListener('close', () => {
     $('#imgview').removeAttribute('src');
     $('#imgview').alt = '';
 });
+
+// Modal dialogs: focus the first control on open, keep Tab inside, and restore
+// focus to whatever opened the dialog when it closes.
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const dialogReturn = new WeakMap();
+const dialogItems = (dlg) => [...dlg.querySelectorAll(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+function openDialog(dlg, opener) {
+    dialogReturn.set(dlg, opener || document.activeElement);
+    dlg.showModal();
+    const first = dialogItems(dlg)[0];
+    if (first) first.focus();
+}
+function trapFocus(dlg) {
+    dlg.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+        const items = dialogItems(dlg);
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+    dlg.addEventListener('close', () => {
+        const back = dialogReturn.get(dlg);
+        dialogReturn.delete(dlg);
+        if (back && document.contains(back)) back.focus();
+    });
+}
+trapFocus($('#dlg'));
+trapFocus($('#imgdlg'));
 $('#okhint').textContent = '(' + OK_HINT + ')';
 // Keep the picker in sync with the formats the app actually accepts.
 $('#fi').accept = OK_EXT.map((e) => '.' + e).join(',');
@@ -634,7 +690,7 @@ async function loadS(full) {
     const active = presets.find((p) => p.id === activePreset);
     if (active) applyPreset(active);
 }
-$('#gear').onclick = () => { if ($('#dlg').open) return; $('#dlg').showModal(); loadS(); };
+$('#gear').onclick = () => { if ($('#dlg').open) return; openDialog($('#dlg'), $('#gear')); loadS(); };
 $('#close').onclick = () => $('#dlg').close();
 document.querySelectorAll('input[name=engine]').forEach((r) => r.onchange = async () => { await api.setSettings({ engine: r.value }); syncEngine(); });
 $('#providerSel').onchange = async () => { await api.setSettings({ provider: $('#providerSel').value }); await loadS(); };

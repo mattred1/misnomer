@@ -104,6 +104,83 @@
         return out;
     }
 
+    // Approximate list prices in USD per million tokens, reviewed 2026-10-17.
+    // Each row is [model pattern, input price, output price]; first match wins.
+    // Vendors change prices and add models, so unmatched IDs report tokens only.
+    const PRICING = {
+        anthropic: [
+            [/claude-(fable|mythos)-5/, 10, 50],
+            [/claude-opus-5[.-]?5/, 4, 20],
+            [/claude-opus-5/, 5, 25],
+            [/claude-opus-4[.-]?[5-8]/, 5, 25],
+            [/claude-opus-4/, 15, 75],
+            [/claude-sonnet-5/, 2, 10],
+            [/claude-sonnet-4/, 3, 15],
+            [/claude-haiku-5[.-]?5/, 0.1, 0.5],
+            [/claude-haiku-4[.-]?5/, 1, 5],
+            [/claude-haiku-3[.-]?5/, 0.8, 4]
+        ],
+        openai: [
+            [/gpt-6-astra/, 10, 50],
+            [/gpt-6[.-]?1-sol/, 2, 10],
+            [/gpt-6-luna/, 0.1, 0.5],
+            [/gpt-4\.1-nano/, 0.1, 0.4],
+            [/gpt-4\.1-mini/, 0.4, 1.6],
+            [/gpt-4\.1/, 2, 8],
+            [/gpt-4o-mini/, 0.15, 0.6],
+            [/gpt-4o/, 2.5, 10],
+            [/o4-mini/, 1.1, 4.4],
+            [/o3-mini/, 1.1, 4.4],
+            [/o3/, 2, 8]
+        ],
+        google: [
+            [/gemini-4-argon/, 2, 10],
+            [/gemini-3\.8-flash/, 0.75, 3.75],
+            [/gemini-3\.6-flash/, 0.75, 3.75],
+            [/gemini-3\.1-flash-lite/, 0.25, 1.5],
+            [/gemini-3-flash/, 0.5, 3],
+            [/gemini-3\.1-pro/, 2, 12],
+            [/gemini-2\.5-pro/, 1.25, 10],
+            [/gemini-2\.5-flash-lite/, 0.1, 0.4],
+            [/gemini-2\.5-flash/, 0.3, 2.5]
+        ],
+        deepseek: [
+            [/deepseek-v4-pro/, 1.32, 3.96],
+            [/deepseek-.*flash/, 0.3, 1.2],
+            [/deepseek-reasoner/, 0.55, 2.19],
+            [/deepseek-chat/, 0.27, 1.1]
+        ],
+        xai: [
+            [/grok-4\.(5|6|7)/, 2, 6],
+            [/grok-4\.(3|20)/, 1.25, 2.5],
+            [/grok-build/, 1, 2],
+            [/grok-4/, 2, 6]
+        ],
+        mistral: [
+            [/mistral-large/, 0.5, 1.5]
+        ],
+        together: [
+            [/llama-3[.-]?3-70b/, 1.04, 1.04],
+            [/gpt-oss-120b/, 0.15, 0.6],
+            [/qwen3-235b/, 0.2, 0.6],
+            [/deepseek-v4[.-]?1-flash/, 0.3, 1.2],
+            [/gemma-4-31b/, 0.39, 0.97],
+            [/qwen3[.-]?8-flash/, 0.15, 0.47],
+            [/nemotron-3[.-]?5-super-vl/, 0.15, 0.5]
+        ]
+    };
+
+    // Returns an estimated USD cost, or null when the model has no known list price.
+    function estimateCost(providerId, model, inputTokens, outputTokens) {
+        const table = PRICING[providerId];
+        if (!table) return null;
+        const id = String(model || '').toLowerCase();
+        for (const [pattern, input, output] of table) {
+            if (pattern.test(id)) return (Number(inputTokens || 0) * input + Number(outputTokens || 0) * output) / 1e6;
+        }
+        return null;
+    }
+
     // Normalizes stored settings, including the single-provider layout that predates
     // this list: one encrypted key and one model at the top level, with provider
     // meaning the engine ('anthropic' or 'local').
@@ -120,5 +197,5 @@
         return s;
     }
 
-    return { LIST, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings };
+    return { LIST, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost };
 });

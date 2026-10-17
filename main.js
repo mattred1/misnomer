@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os'), { spawn } = require('child_process');
-const { LIST: PROVIDERS, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings } = require('./renderer/providers.js');
+const { LIST: PROVIDERS, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost } = require('./renderer/providers.js');
 const Exif = require('./renderer/exif.js');
 
 const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
@@ -80,6 +80,11 @@ function parse(t, keys) {
     for (const k of keys) out[k] = String(j[k] || '');
     return out;
 }
+// Providers report token usage under different names; normalize to input/output.
+const usageOf = (input, output) => {
+    const i = Number(input) || 0, o = Number(output) || 0;
+    return i || o ? { input: i, output: o } : null;
+};
 async function timed(ms, label, signal, fn) {
     const ctl = new AbortController();
     const onAbort = () => ctl.abort();
@@ -153,7 +158,10 @@ async function cloudAnthropic(p, key, model, req, text, fields, signal) {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || r.statusText);
-        return parse((j.content || []).map((c) => c.text || '').join(''), fieldKeys(fields));
+        return {
+            info: parse((j.content || []).map((c) => c.text || '').join(''), fieldKeys(fields)),
+            usage: usageOf(j.usage?.input_tokens, j.usage?.output_tokens)
+        };
     });
 }
 
@@ -194,7 +202,10 @@ async function cloudOpenAI(p, key, model, req, text, fields, signal) {
         }
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || j.message || r.statusText);
-        return parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields));
+        return {
+            info: parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields)),
+            usage: usageOf(j.usage?.prompt_tokens, j.usage?.completion_tokens)
+        };
     });
 }
 
@@ -222,7 +233,10 @@ async function cloudGoogle(p, key, model, req, text, fields, signal) {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || r.statusText);
-        return parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join(''), fieldKeys(fields));
+        return {
+            info: parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join(''), fieldKeys(fields)),
+            usage: usageOf(j.usageMetadata?.promptTokenCount, j.usageMetadata?.candidatesTokenCount)
+        };
     });
 }
 
@@ -269,7 +283,10 @@ async function local(s, req, signal) {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw httpError('Local server error', r.status, j.error?.message || r.statusText);
-        return parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields));
+        return {
+            info: parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields)),
+            usage: usageOf(j.usage?.prompt_tokens, j.usage?.completion_tokens)
+        };
     });
 }
 
@@ -297,13 +314,20 @@ ipcMain.handle('analyze', async (_e, req) => {
     inflight.add(ctl);
     req = { ...req, dateHint: DATE_HINTS[req.dateFormat] || DEFAULT_DATE_HINT };
     try {
-        const info = await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)));
+        const result = await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)));
+        const info = result.info;
+        // Fill in an estimated cost where the provider/model has a known list price.
+        if (result.usage) {
+            const local = s.provider === 'local';
+            result.usage.local = local;
+            result.usage.cost = local ? 0 : estimateCost(s.provider, (s.models || {})[s.provider], result.usage.input, result.usage.output);
+        }
         // Only fill a date the model left empty; a visible printed date always wins.
         if (req.kind === 'image' && !info.date) {
             const taken = await captureDate(req.path, req.dateFormat);
             if (taken) { info.date = taken; info.dateSource = 'exif'; }
         }
-        return { ok: true, info };
+        return { ok: true, info, usage: result.usage || null };
     }
     catch (e) { return { ok: false, error: e.message }; }
     finally { inflight.delete(ctl); }
