@@ -12,9 +12,11 @@ Everything runs locally except the files you send to a cloud model. Your API key
 
 - **Batch processing** — drop a folder's worth of files at once, watch per-file status, and fix any name inline before saving.
 - **Two engines**
-  - **Anthropic API** — best accuracy, requires an API key.
+  - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
   - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
-- **Structured output** — both engines are constrained to a JSON schema, so the model can't return malformed data.
+- **Live model list** — the model dropdown is populated from the selected provider's own catalogue, so only models your key can actually reach are offered.
+- **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
+- **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
 - **Naming templates** — compose names from `{date}`, `{entity}`, `{type}`, and `{title}` with a configurable separator, plus any custom fields you define.
 - **Live template preview** — see the filename your template produces, with unknown placeholders flagged before you run a batch.
 - **Date formats** — `YYYY-MM-DD`, `MM-DD-YYYY`, `DD-MM-YYYY`, `YYYYMMDD`, `YYYY-MM`, or `YYYY`.
@@ -35,7 +37,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 
 | Type | Extensions | How it is read |
 | --- | --- | --- |
-| Documents | `.pdf` | Sent whole to the Anthropic API. For the local engine, the first 2 pages are extracted as text and rendered to JPEG images. |
+| Documents | `.pdf` | Sent as a native document to Anthropic and Gemini. Providers that speak OpenAI chat completions cannot take a PDF, so the first 2 pages are rendered to JPEG images instead. |
 | Images (native) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` | Sent to the model directly |
 | Images (canvas) | `.bmp`, `.ico`, `.svg`, `.avif` | Chromium can decode these but the model APIs won't accept them, so they are re-encoded to JPEG in the app. The file on disk keeps its original format. |
 | Images (sips) | `.tif`, `.tiff`, `.heic`, `.heif` | Chromium cannot decode these at all, so macOS `sips` converts them to JPEG in the main process. macOS only. |
@@ -49,7 +51,7 @@ Text is capped at 12,000 characters per file before it goes into a prompt. Files
 
 - macOS (packaging is currently configured for macOS `.dmg` only)
 - Node.js 18+ and npm (for development)
-- **For the cloud engine:** an Anthropic API key
+- **For the cloud engine:** an API key for whichever provider you choose
 - **For the local engine:** `brew install llama.cpp`, then a vision `.gguf` model and its matching `mmproj` `.gguf`
 
 ## Getting started
@@ -64,10 +66,32 @@ npm start
 ### Configure an engine
 
 1. Click **Settings**.
-2. Either:
-   - Select **Anthropic API**, paste your key, and click **Save**; or
-   - Select **Local model** and choose the model `.gguf`, the `mmproj` `.gguf`, and (optionally) the `llama-server` binary. If the binary lives in Homebrew's standard location, it is auto-detected.
-3. Click **Done**. Settings persist to your Electron `userData` directory.
+2. Under **Engine**, choose **Cloud API** or **Local model**. Only the section for the engine you picked is shown.
+3. For **Cloud API**:
+   - Pick a **Provider**.
+   - Paste that provider's API key and click **Save**. The key is encrypted with the OS keychain and stored per provider.
+   - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
+   - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
+4. For **Local model**, choose the model `.gguf`, the `mmproj` `.gguf`, and (optionally) the `llama-server` binary. If the binary lives in Homebrew's standard location, it is auto-detected.
+5. Click **Done**. Settings persist to your Electron `userData` directory.
+
+## Supported providers
+
+| Provider | API family |
+| --- | --- |
+| Anthropic | Messages API |
+| Google Gemini | `generateContent` |
+| OpenAI | OpenAI chat completions |
+| xAI | OpenAI chat completions |
+| DeepSeek | OpenAI chat completions |
+| OpenRouter | OpenAI chat completions |
+| Groq | OpenAI chat completions |
+| Mistral | OpenAI chat completions |
+| Together AI | OpenAI chat completions |
+
+Most providers expose an OpenAI-compatible endpoint, so adding one is a single entry in `renderer/providers.js`.
+
+> Upgrading from a single-provider build? Your existing key and model are migrated to Anthropic automatically on first launch.
 
 ### Using it
 
@@ -99,11 +123,12 @@ npm run lint  # ESLint
 npm run format # Prettier, writes changes in place
 ```
 
-The logic worth testing lives in three dependency-free UMD modules that work in both the renderer and Node:
+The logic worth testing lives in four dependency-free UMD modules that work in both the renderer and Node:
 
 - `renderer/naming.js` — slugging, template filling, filename sanitizing, duplicate resolution
 - `renderer/extract.js` — pulling text out of Office/ebook/HTML/RTF files
 - `renderer/rename.js` — path handling, collision-aware rename planning, and undo replay
+- `renderer/providers.js` — the provider registry, request shapes, model-catalogue parsing, and settings migration
 
 Each is covered by its own test file. Run the tests before changing any of them.
 
@@ -124,11 +149,13 @@ renderer/
   index.html           Markup and all styling
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
+  providers.js         Provider registry, request shapes, model parsing, settings migration
   rename.js            Path handling, rename planning, and undo replay
   app.js               UI state, drag-and-drop, PDF prep, batching, format conversion
 test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
+  providers.test.js    Unit tests for providers.js
   rename.test.js       Unit tests for rename.js
 eslint.config.js       ESLint flat config
 ```
