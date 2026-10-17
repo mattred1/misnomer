@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('api', {
     abort: call('abort'), convert: call('convert'),
     // Dropped and picked files no longer carry a path of their own, so ask Electron for it.
     pathFor: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
-    expand: call('files:expand'), readFile: call('files:read'), existing: call('files:existing'), rename: call('files:rename')
+    expand: call('files:expand'), readFile: call('files:read'), existing: call('files:existing'), rename: call('files:rename'),
+    listModels: call('models:list')
 });
