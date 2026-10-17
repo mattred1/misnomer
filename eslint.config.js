@@ -35,7 +35,7 @@ module.exports = [
     },
     {
         // UMD files: Node must be able to require() them directly for tests.
-        files: ['renderer/naming.js', 'renderer/extract.js'],
+        files: ['renderer/naming.js', 'renderer/extract.js', 'renderer/rename.js'],
         languageOptions: {
             globals: { ...globals.browser, module: 'readonly', require: 'readonly' }
         }
