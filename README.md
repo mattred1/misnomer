@@ -169,7 +169,37 @@ Filesystem work in the main process — recursive folder scans, file reads, dire
 npm run dist
 ```
 
-This runs `electron-builder --mac` and produces a DMG in `dist/`. The build is **unsigned**, so Gatekeeper will warn first-time users. See the roadmap.
+This runs `electron-builder --mac` and produces a DMG in `dist/`. Local builds are unsigned unless signing credentials are present, so Gatekeeper may warn first-time users.
+
+### Signed and notarized builds
+
+The build is signing-ready: Hardened Runtime is enabled, and `npm run dist:signed` turns on electron-builder's notarization step. Signed releases require an Apple Developer Program membership and a **Developer ID Application** certificate.
+
+Add these secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret             | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| `CSC_LINK`         | Base64-encoded `.p12` certificate, including its private key |
+| `CSC_KEY_PASSWORD` | Password for the `.p12`                                      |
+| `APPLE_API_KEY`    | Base64-encoded App Store Connect `.p8` key                   |
+| `APPLE_API_KEY_ID` | App Store Connect key ID                                     |
+| `APPLE_API_ISSUER` | App Store Connect issuer ID                                  |
+| `APPLE_TEAM_ID`    | 10-character Apple Developer team ID                         |
+
+Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds an unsigned DMG when signing credentials are absent and a signed, notarized DMG when they are present, then verifies the signature and stapling ticket before uploading.
+
+To publish a release:
+
+1. Replace `com.example.misnomer` in `package.json` with a stable reverse-DNS bundle ID.
+2. Commit the change and run `npm version patch` (or `minor` / `major`).
+3. Push the commit and tag with `git push --follow-tags`.
+4. The `CI` workflow tests the tag, builds on macOS, signs and notarizes when secrets are configured, and attaches the DMG to the GitHub release.
+
+For a local signed build, export the same environment variables and run:
+
+```bash
+npm run dist:signed
+```
 
 ## Project layout
 
@@ -191,6 +221,7 @@ scripts/
   update-pricing.js    Refreshes pricing.json from the LiteLLM dataset
 .github/workflows/
   pricing.yml          Weekly pricing refresh that opens a PR
+  ci.yml               Lint, format, and tests on PRs; macOS releases on tags
 test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
@@ -248,13 +279,13 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
 - [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
 - [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
-- [ ] **Keyboard shortcuts**
+- [x] **Keyboard shortcuts** — Cmd/Ctrl shortcuts for settings, adding files, generating names, undoing a rename, and cancelling a batch, documented in the README
 - [ ] **Export/import presets and settings** to JSON for sharing and version control
 - [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
-- [ ] **Code signing + notarization** for the macOS DMG (unsigned builds trigger Gatekeeper warnings)
+- [ ] **Code signing + notarization** for the macOS DMG — the CI build and electron-builder configuration are ready; add Apple Developer secrets to enable notarized releases
 - [ ] **Windows and Linux build targets**
 - [ ] **Auto-update** via `electron-updater`
-- [ ] **GitHub Actions CI** — run tests on PR and publish signed releases on tag
+- [x] **GitHub Actions CI** — lint, format check, and tests on PRs; macOS builds on version tags, with signed releases when Apple secrets are configured
 - [ ] **Internationalization** of the prompt and UI
 - [ ] **Headless CLI / watch-folder mode** for scripting and scheduled runs
 - [ ] **Configurable concurrency** — the worker count is hardcoded (1 local, 2 cloud); expose local/cloud concurrency in Settings and adapt to provider rate limits
