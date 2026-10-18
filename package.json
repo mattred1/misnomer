@@ -7,6 +7,7 @@
     "scripts": {
         "start": "electron .",
         "dist": "electron-builder --mac",
+        "dist:signed": "electron-builder --mac -c.mac.notarize=true",
         "test": "node --test",
         "lint": "eslint .",
         "pricing:update": "node scripts/update-pricing.js",
@@ -26,7 +27,9 @@
             "category": "public.app-category.productivity",
             "target": [
                 "dmg"
-            ]
+            ],
+            "hardenedRuntime": true,
+            "gatekeeperAssess": false
         }
     },
     "dependencies": {
