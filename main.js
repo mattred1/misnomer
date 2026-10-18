@@ -1,29 +1,66 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } = require('electron');
-const path = require('path'), fs = require('fs'), os = require('os'), { spawn } = require('child_process');
-const { LIST: PROVIDERS, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost } = require('./renderer/providers.js');
+const path = require('path'),
+    fs = require('fs'),
+    os = require('os'),
+    { spawn } = require('child_process');
+const {
+    LIST: PROVIDERS,
+    providerById,
+    headersFor,
+    modelUrl,
+    authRequest,
+    parseModels,
+    googleSchema,
+    migrateSettings,
+    estimateCost
+} = require('./renderer/providers.js');
 const Exif = require('./renderer/exif.js');
 
-const CLOUD_TIMEOUT_MS = 120000, LOCAL_TIMEOUT_MS = 120000, PORT = 8187;
+const CLOUD_TIMEOUT_MS = 120000,
+    LOCAL_TIMEOUT_MS = 120000,
+    PORT = 8187;
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{title}', sep: '-', dateFormat: 'ymd', extra: '', fields: [] };
 // Bundled model prices, refreshed by scripts/update-pricing.js. If the file is
 // missing the app still reports tokens, just without a cost estimate.
 let PRICING = { schemaVersion: 0, families: {}, models: {} };
-try { PRICING = require('./pricing/pricing.json'); } catch { /* token-only mode */ }
+try {
+    PRICING = require('./pricing/pricing.json');
+} catch {
+    /* token-only mode */
+}
 // A factory so each read gets its own objects rather than sharing mutable defaults.
 const DEF = () => ({
-    engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
-    localModel: '', localMmproj: '', llamaServer: '', presets: [DEFAULT_PRESET], activePreset: 'default', theme: 'auto'
+    engine: 'cloud',
+    provider: 'anthropic',
+    models: {},
+    apiKeys: {},
+    localModel: '',
+    localMmproj: '',
+    llamaServer: '',
+    presets: [DEFAULT_PRESET],
+    activePreset: 'default',
+    theme: 'auto'
 });
 const SF = () => path.join(app.getPath('userData'), 'settings.json');
 const write = (s) => fs.writeFileSync(SF(), JSON.stringify(s, null, 2));
 // Reads settings, migrating the single-provider layout that predates the provider list.
 function read() {
     let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(SF(), 'utf8')); } catch { /* first run, or unreadable file */ }
+    try {
+        parsed = JSON.parse(fs.readFileSync(SF(), 'utf8'));
+    } catch {
+        /* first run, or unreadable file */
+    }
     return migrateSettings(parsed, DEF());
 }
-const decrypt = (enc) => { try { return enc ? safeStorage.decryptString(Buffer.from(enc, 'base64')) : ''; } catch { return ''; } };
+const decrypt = (enc) => {
+    try {
+        return enc ? safeStorage.decryptString(Buffer.from(enc, 'base64')) : '';
+    } catch {
+        return '';
+    }
+};
 const keyFor = (s, id) => decrypt((s.apiKeys || {})[id]);
 const providerOf = (s) => providerById(s.provider) || PROVIDERS[0];
 // OpenAI-compatible chat APIs cannot take a PDF, so those providers get page images instead.
@@ -46,13 +83,22 @@ const DATE_HINTS = {
 const SCHEMA = (dateHint, fields) => {
     const properties = {
         title: { type: 'string', description: 'A 2 to 5 word plain-language description of the file contents, lowercase, no punctuation' },
-        entity: { type: 'string', description: 'The vendor, company, or person tied to the document, or an empty string if none is identifiable' },
+        entity: {
+            type: 'string',
+            description: 'The vendor, company, or person tied to the document, or an empty string if none is identifiable'
+        },
         date: { type: 'string', description: dateHint || DEFAULT_DATE_HINT },
-        type: { type: 'string', description: 'One or two words describing the document type, like invoice, receipt, screenshot, photo, or resume' }
+        type: {
+            type: 'string',
+            description: 'One or two words describing the document type, like invoice, receipt, screenshot, photo, or resume'
+        }
     };
     for (const f of fields || []) {
         if (!f.key || properties[f.key]) continue; // never overwrite a built-in field
-        properties[f.key] = { type: 'string', description: f.description || 'The ' + f.key.replace(/[_-]+/g, ' ') + ' for this file, or an empty string if not applicable' };
+        properties[f.key] = {
+            type: 'string',
+            description: f.description || 'The ' + f.key.replace(/[_-]+/g, ' ') + ' for this file, or an empty string if not applicable'
+        };
     }
     return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 };
@@ -69,15 +115,19 @@ function prompt(name, text, dateHint, extra, fields) {
         'type (one or two words like invoice, receipt, screenshot, photo, resume)'
     ];
     for (const f of fields || []) parts.push(f.key.replace(/[_-]+/g, ' ') + ' (' + (f.description || 'a short value') + ')');
-    let p = 'You name files. Look at the attached file and describe it using the required fields: ' + parts.join(', ') + '. '
-        + 'Lowercase plain words, no punctuation. Never guess a date; use an empty string if none is visible. '
-        + 'Reply with only a JSON object containing those fields.';
+    let p =
+        'You name files. Look at the attached file and describe it using the required fields: ' +
+        parts.join(', ') +
+        '. ' +
+        'Lowercase plain words, no punctuation. Never guess a date; use an empty string if none is visible. ' +
+        'Reply with only a JSON object containing those fields.';
     if (extra && extra.trim()) p += ' Additional instructions: ' + extra.trim();
     p += ' Original filename: ' + name + (text ? '\n\nExtracted text:\n' + text : '');
     return p;
 }
 function parse(t, keys) {
-    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    const a = t.indexOf('{'),
+        b = t.lastIndexOf('}');
     if (a < 0 || b < a) throw new Error('Model did not return JSON: ' + t.slice(0, 120));
     const j = JSON.parse(t.slice(a, b + 1));
     const out = {};
@@ -86,16 +136,21 @@ function parse(t, keys) {
 }
 // Providers report token usage under different names; normalize to input/output.
 const usageOf = (input, output) => {
-    const i = Number(input) || 0, o = Number(output) || 0;
+    const i = Number(input) || 0,
+        o = Number(output) || 0;
     return i || o ? { input: i, output: o } : null;
 };
 async function timed(ms, label, signal, fn) {
     const ctl = new AbortController();
     const onAbort = () => ctl.abort();
-    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    if (signal) {
+        if (signal.aborted) ctl.abort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
     const t = setTimeout(() => ctl.abort(), ms);
-    try { return await fn(ctl.signal); }
-    catch (e) {
+    try {
+        return await fn(ctl.signal);
+    } catch (e) {
         if (e.name === 'AbortError') {
             // Distinguish a user cancellation from our own timeout.
             if (signal && signal.aborted) throw new Error('Cancelled.');
@@ -105,7 +160,10 @@ async function timed(ms, label, signal, fn) {
         // Keep the HTTP status so attempt() can decide whether the call is worth retrying.
         if (e.status) err.status = e.status;
         throw err;
-    } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
+    } finally {
+        clearTimeout(t);
+        if (signal) signal.removeEventListener('abort', onAbort);
+    }
 }
 const httpError = (label, status, detail) => {
     const e = new Error(label + ' ' + status + ': ' + detail);
@@ -117,8 +175,9 @@ const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 const RETRIES = 3;
 async function attempt(fn) {
     for (let i = 0; ; i++) {
-        try { return await fn(); }
-        catch (e) {
+        try {
+            return await fn();
+        } catch (e) {
             if (i >= RETRIES - 1 || !RETRY_STATUS.has(e.status)) throw e;
             // Exponential backoff with jitter so parallel workers do not retry in lockstep.
             await new Promise((r) => setTimeout(r, Math.min(8000, 500 * 2 ** i) + Math.random() * 250));
@@ -145,17 +204,21 @@ async function cloudAnthropic(p, key, model, req, text, fields, signal) {
     const content = [];
     if (req.kind !== 'text') {
         const data = Buffer.from(req.bytes).toString('base64');
-        content.push(req.kind === 'document'
-            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
-            : { type: 'image', source: { type: 'base64', media_type: MIME[req.ext], data } });
+        content.push(
+            req.kind === 'document'
+                ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+                : { type: 'image', source: { type: 'base64', media_type: MIME[req.ext], data } }
+        );
     }
     content.push({ type: 'text', text });
     return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
         const r = await fetch(p.base + '/v1/messages', {
-            method: 'POST', signal: sig,
+            method: 'POST',
+            signal: sig,
             headers: { ...headersFor(p, key), 'content-type': 'application/json' },
             body: JSON.stringify({
-                model, max_tokens: 300,
+                model,
+                max_tokens: 300,
                 messages: [{ role: 'user', content }],
                 output_config: { format: { type: 'json_schema', schema: SCHEMA(req.dateHint, fields) } }
             })
@@ -173,7 +236,10 @@ function openAIContent(req, text) {
     if (req.kind === 'text') return [{ type: 'text', text }];
     const parts = [];
     if (req.kind === 'image') {
-        parts.push({ type: 'image_url', image_url: { url: 'data:' + MIME[req.ext] + ';base64,' + Buffer.from(req.bytes).toString('base64') } });
+        parts.push({
+            type: 'image_url',
+            image_url: { url: 'data:' + MIME[req.ext] + ';base64,' + Buffer.from(req.bytes).toString('base64') }
+        });
     } else {
         // Chat-completions APIs do not accept PDFs, so the renderer supplies page images.
         for (const page of req.pages || []) {
@@ -186,16 +252,20 @@ function openAIContent(req, text) {
 
 async function cloudOpenAI(p, key, model, req, text, fields, signal) {
     const body = {
-        model, max_tokens: 300, temperature: 0.1,
+        model,
+        max_tokens: 300,
+        temperature: 0.1,
         messages: [{ role: 'user', content: openAIContent(req, text) }],
         response_format: { type: 'json_schema', json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) } }
     };
     return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
-        const send = (payload) => fetch(p.base + '/chat/completions', {
-            method: 'POST', signal: sig,
-            headers: { ...headersFor(p, key), 'content-type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        const send = (payload) =>
+            fetch(p.base + '/chat/completions', {
+                method: 'POST',
+                signal: sig,
+                headers: { ...headersFor(p, key), 'content-type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
         let r = await send(body);
         // Not every OpenAI-compatible vendor supports structured outputs. Fall back to
         // plain JSON and let parse() coerce the shape.
@@ -224,12 +294,14 @@ async function cloudGoogle(p, key, model, req, text, fields, signal) {
     const url = p.base + '/' + String(model).replace(/^models\//, '') + ':generateContent?key=' + encodeURIComponent(key);
     return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
         const r = await fetch(url, {
-            method: 'POST', signal: sig,
+            method: 'POST',
+            signal: sig,
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ role: 'user', parts }],
                 generationConfig: {
-                    maxOutputTokens: 300, temperature: 0.1,
+                    maxOutputTokens: 300,
+                    temperature: 0.1,
                     responseMimeType: 'application/json',
                     responseSchema: googleSchema(SCHEMA(req.dateHint, fields))
                 }
@@ -244,8 +316,15 @@ async function cloudGoogle(p, key, model, req, text, fields, signal) {
     });
 }
 
-let srv = null, srvKey = '', srvErr = '';
-function stopServer() { if (srv) { srv.kill(); srv = null; } }
+let srv = null,
+    srvKey = '',
+    srvErr = '';
+function stopServer() {
+    if (srv) {
+        srv.kill();
+        srv = null;
+    }
+}
 async function ensureServer(s) {
     const key = [s.localModel, s.localMmproj, s.llamaServer].join('|');
     if (srv && srvKey === key) return;
@@ -255,14 +334,26 @@ async function ensureServer(s) {
     if (!s.localModel) throw new Error('No local model chosen. Pick a .gguf file in Settings.');
     const args = ['-m', s.localModel, '--host', '127.0.0.1', '--port', String(PORT)];
     if (s.localMmproj) args.push('--mmproj', s.localMmproj);
-    srvErr = ''; srvKey = key;
+    srvErr = '';
+    srvKey = key;
     const p = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     srv = p;
-    p.stderr.on('data', (d) => { srvErr = (srvErr + d).slice(-400); });
-    p.on('exit', () => { if (srv === p) srv = null; });
+    p.stderr.on('data', (d) => {
+        srvErr = (srvErr + d).slice(-400);
+    });
+    p.on('exit', () => {
+        if (srv === p) srv = null;
+    });
     for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
-        if (!srv) throw new Error('llama-server exited while loading. Check that the model and mmproj files match. ' + srvErr.trim().split('\n').pop());
-        try { if ((await fetch('http://127.0.0.1:' + PORT + '/health')).ok) return; } catch { /* server not accepting connections yet */ }
+        if (!srv)
+            throw new Error(
+                'llama-server exited while loading. Check that the model and mmproj files match. ' + srvErr.trim().split('\n').pop()
+            );
+        try {
+            if ((await fetch('http://127.0.0.1:' + PORT + '/health')).ok) return;
+        } catch {
+            /* server not accepting connections yet */
+        }
         await new Promise((r) => setTimeout(r, 1000));
     }
     throw new Error('Local model took more than 3 minutes to load.');
@@ -270,19 +361,33 @@ async function ensureServer(s) {
 async function local(s, req, signal) {
     await ensureServer(s);
     const fields = req.fields || [];
-    const img = (buf, mime) => ({ type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + Buffer.from(buf).toString('base64') } });
+    const img = (buf, mime) => ({
+        type: 'image_url',
+        image_url: { url: 'data:' + mime + ';base64,' + Buffer.from(buf).toString('base64') }
+    });
     let imgs = [];
     if (req.kind === 'image') imgs = [img(req.bytes, MIME[req.ext])];
     else if (req.kind === 'document') imgs = (req.pages || []).map((b) => img(b, 'image/jpeg'));
     return timed(LOCAL_TIMEOUT_MS, 'Local model request', signal, async (sig) => {
         const r = await fetch('http://127.0.0.1:' + PORT + '/v1/chat/completions', {
-            method: 'POST', signal: sig, headers: { 'content-type': 'application/json' },
+            method: 'POST',
+            signal: sig,
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-                max_tokens: 300, temperature: 0.1,
-                messages: [{ role: 'user', content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) }] }],
+                max_tokens: 300,
+                temperature: 0.1,
+                messages: [
+                    {
+                        role: 'user',
+                        content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) }]
+                    }
+                ],
                 // llama-server (OpenAI-compatible) grammar-constrains output to this schema when supported.
                 // Falls back harmlessly on older builds since parse() below still extracts JSON from free text.
-                response_format: { type: 'json_schema', json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) } }
+                response_format: {
+                    type: 'json_schema',
+                    json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) }
+                }
             })
         });
         const j = await r.json().catch(() => ({}));
@@ -309,8 +414,14 @@ async function captureDate(filePath, dateFormat) {
         const head = Buffer.alloc(EXIF_HEAD_BYTES);
         const { bytesRead } = await fh.read(head, 0, head.length, 0);
         return Exif.formatDate(Exif.exifDate(head.subarray(0, bytesRead)), dateFormat);
-    } catch { return ''; }
-    finally { if (fh) await fh.close().catch(() => { /* already closed */ }); }
+    } catch {
+        return '';
+    } finally {
+        if (fh)
+            await fh.close().catch(() => {
+                /* already closed */
+            });
+    }
 }
 ipcMain.handle('analyze', async (_e, req) => {
     const s = read();
@@ -324,19 +435,29 @@ ipcMain.handle('analyze', async (_e, req) => {
         if (result.usage) {
             const local = s.provider === 'local';
             result.usage.local = local;
-            result.usage.cost = local ? 0 : estimateCost(PRICING, s.provider, (s.models || {})[s.provider], result.usage.input, result.usage.output);
+            result.usage.cost = local
+                ? 0
+                : estimateCost(PRICING, s.provider, (s.models || {})[s.provider], result.usage.input, result.usage.output);
         }
         // Only fill a date the model left empty; a visible printed date always wins.
         if (req.kind === 'image' && !info.date) {
             const taken = await captureDate(req.path, req.dateFormat);
-            if (taken) { info.date = taken; info.dateSource = 'exif'; }
+            if (taken) {
+                info.date = taken;
+                info.dateSource = 'exif';
+            }
         }
         return { ok: true, info, usage: result.usage || null };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    } finally {
+        inflight.delete(ctl);
     }
-    catch (e) { return { ok: false, error: e.message }; }
-    finally { inflight.delete(ctl); }
 });
-ipcMain.handle('abort', () => { for (const c of inflight) c.abort(); return true; });
+ipcMain.handle('abort', () => {
+    for (const c of inflight) c.abort();
+    return true;
+});
 
 // sips ships with macOS and handles the formats Chromium cannot decode
 // (TIFF, HEIC/HEIF), which the renderer's canvas-based conversion cannot reach.
@@ -344,9 +465,15 @@ const SIPS = '/usr/bin/sips';
 async function sipsToJpeg(buf, max) {
     if (!fs.existsSync(SIPS)) throw new Error('TIFF and HEIC conversion needs macOS sips.');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'misnomer-'));
-    const src = path.join(dir, 'input'), dst = path.join(dir, 'output.jpg');
+    const src = path.join(dir, 'input'),
+        dst = path.join(dir, 'output.jpg');
     const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
-    try { await fs.promises.writeFile(src, buf); } catch (e) { cleanup(); throw e; }
+    try {
+        await fs.promises.writeFile(src, buf);
+    } catch (e) {
+        cleanup();
+        throw e;
+    }
     const args = ['-s', 'format', 'jpeg'];
     // Thumbnails only need a small image; resize during the conversion instead of
     // converting at full size and shrinking the bytes in the renderer.
@@ -355,19 +482,31 @@ async function sipsToJpeg(buf, max) {
     return new Promise((resolve, reject) => {
         const p = spawn(SIPS, args);
         let err = '';
-        p.stderr.on('data', (d) => { err = (err + d).slice(-300); });
-        p.on('error', (e) => { cleanup(); reject(e); });
+        p.stderr.on('data', (d) => {
+            err = (err + d).slice(-300);
+        });
+        p.on('error', (e) => {
+            cleanup();
+            reject(e);
+        });
         p.on('exit', async (code) => {
             try {
                 if (code !== 0 || !fs.existsSync(dst)) throw new Error('Could not convert the image: ' + err.trim());
                 resolve(await fs.promises.readFile(dst));
-            } catch (e) { reject(e); } finally { cleanup(); }
+            } catch (e) {
+                reject(e);
+            } finally {
+                cleanup();
+            }
         });
     });
 }
 ipcMain.handle('convert', async (_e, buf, max) => {
-    try { return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf), max) }; }
-    catch (e) { return { ok: false, error: e.message }; }
+    try {
+        return { ok: true, bytes: await sipsToJpeg(Buffer.from(buf), max) };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -382,9 +521,16 @@ async function walk(dir, out) {
         if (out.length >= MAX_EXPAND) return;
         if (ent.name.startsWith('.')) continue;
         const p = path.join(dir, ent.name);
-        if (ent.isDirectory()) { if (!SKIP_DIRS.has(ent.name)) await walk(p, out); }
-        else if (ent.isFile()) out.push(p);
-        else if (ent.isSymbolicLink()) { try { if ((await fs.promises.stat(p)).isFile()) out.push(p); } catch { /* broken link */ } }
+        if (ent.isDirectory()) {
+            if (!SKIP_DIRS.has(ent.name)) await walk(p, out);
+        } else if (ent.isFile()) out.push(p);
+        else if (ent.isSymbolicLink()) {
+            try {
+                if ((await fs.promises.stat(p)).isFile()) out.push(p);
+            } catch {
+                /* broken link */
+            }
+        }
     }
 }
 
@@ -396,7 +542,11 @@ ipcMain.handle('files:expand', async (_e, paths) => {
         for (const p of paths || []) {
             if (found.length >= MAX_EXPAND) break;
             let st;
-            try { st = await fs.promises.stat(p); } catch { continue; }
+            try {
+                st = await fs.promises.stat(p);
+            } catch {
+                continue;
+            }
             if (st.isDirectory()) await walk(p, found);
             else if (st.isFile()) found.push(p);
         }
@@ -405,38 +555,55 @@ ipcMain.handle('files:expand', async (_e, paths) => {
             return { path: p, dir: path.dirname(p), name, ext: (name.split('.').pop() || '').toLowerCase() };
         });
         return { ok: true, truncated: found.length >= MAX_EXPAND, files };
-    } catch (e) { return { ok: false, error: e.message }; }
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 });
 
 ipcMain.handle('files:read', async (_e, p) => {
-    try { return { ok: true, bytes: await fs.promises.readFile(p) }; }
-    catch (e) { return { ok: false, error: e.message }; }
+    try {
+        return { ok: true, bytes: await fs.promises.readFile(p) };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 });
 
 // Filenames currently in each directory, so collisions can be resolved before renaming.
 ipcMain.handle('files:existing', async (_e, dirs) => {
     const out = {};
-    await Promise.all((dirs || []).map(async (d) => {
-        try { out[d] = await fs.promises.readdir(d); } catch { out[d] = []; }
-    }));
+    await Promise.all(
+        (dirs || []).map(async (d) => {
+            try {
+                out[d] = await fs.promises.readdir(d);
+            } catch {
+                out[d] = [];
+            }
+        })
+    );
     return out;
 });
 
-ipcMain.handle('files:rename', (_e, plan) => (plan || []).map((e) => {
-    const from = String(e.from || ''), to = String(e.to || '');
-    try {
-        if (!from || !to) return { id: e.id, ok: false, error: 'Missing path.' };
-        // The single guard that stops a bad plan from moving a file anywhere else on disk.
-        if (path.dirname(from) !== path.dirname(to)) return { id: e.id, ok: false, error: 'Refusing to move a file to another folder.' };
-        if (from === to) return { id: e.id, ok: true, skipped: true };
-        // On a case-insensitive volume a case-only rename resolves to the same file,
-        // so existsSync would wrongly look like a collision.
-        const caseOnly = from.toLowerCase() === to.toLowerCase();
-        if (!caseOnly && fs.existsSync(to)) return { id: e.id, ok: false, error: 'That name is already taken.' };
-        fs.renameSync(from, to);
-        return { id: e.id, ok: true };
-    } catch (err) { return { id: e.id, ok: false, error: err.message }; }
-}));
+ipcMain.handle('files:rename', (_e, plan) =>
+    (plan || []).map((e) => {
+        const from = String(e.from || ''),
+            to = String(e.to || '');
+        try {
+            if (!from || !to) return { id: e.id, ok: false, error: 'Missing path.' };
+            // The single guard that stops a bad plan from moving a file anywhere else on disk.
+            if (path.dirname(from) !== path.dirname(to))
+                return { id: e.id, ok: false, error: 'Refusing to move a file to another folder.' };
+            if (from === to) return { id: e.id, ok: true, skipped: true };
+            // On a case-insensitive volume a case-only rename resolves to the same file,
+            // so existsSync would wrongly look like a collision.
+            const caseOnly = from.toLowerCase() === to.toLowerCase();
+            if (!caseOnly && fs.existsSync(to)) return { id: e.id, ok: false, error: 'That name is already taken.' };
+            fs.renameSync(from, to);
+            return { id: e.id, ok: true };
+        } catch (err) {
+            return { id: e.id, ok: false, error: err.message };
+        }
+    })
+);
 ipcMain.handle('settings:get', () => {
     const s = read();
     // Only report which providers have a key plus the last four characters.
@@ -446,9 +613,17 @@ ipcMain.handle('settings:get', () => {
         if (k) keys[p.id] = k.slice(-4);
     }
     return {
-        engine: s.engine, provider: providerOf(s).id, models: s.models, keys, pdfMode: pdfMode(s),
-        localModel: s.localModel, localMmproj: s.localMmproj, llamaServer: s.llamaServer, detectedBin: detectBin(),
-        presets: s.presets, activePreset: s.activePreset,
+        engine: s.engine,
+        provider: providerOf(s).id,
+        models: s.models,
+        keys,
+        pdfMode: pdfMode(s),
+        localModel: s.localModel,
+        localMmproj: s.localMmproj,
+        llamaServer: s.llamaServer,
+        detectedBin: detectBin(),
+        presets: s.presets,
+        activePreset: s.activePreset,
         theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto'
     };
 });
@@ -470,7 +645,8 @@ ipcMain.handle('settings:set', (_e, p) => {
         s.theme = p.theme;
         nativeTheme.themeSource = p.theme === 'auto' ? 'system' : p.theme;
     }
-    write(s); return { ok: true };
+    write(s);
+    return { ok: true };
 });
 // Fetches the provider's model catalogue. A successful call doubles as the
 // connection check shown in Settings.
@@ -502,7 +678,10 @@ ipcMain.handle('models:list', async (_e, providerId) => {
     }
 });
 ipcMain.handle('pick', async (_e, kind) => {
-    const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: kind === 'bin' ? [] : [{ name: 'GGUF model', extensions: ['gguf'] }] });
+    const r = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: kind === 'bin' ? [] : [{ name: 'GGUF model', extensions: ['gguf'] }]
+    });
     return r.canceled ? '' : r.filePaths[0];
 });
 ipcMain.handle('pickFolder', async () => {
@@ -512,18 +691,25 @@ ipcMain.handle('pickFolder', async () => {
 ipcMain.handle('save', async (_e, name, buf) => {
     const r = await dialog.showSaveDialog({ defaultPath: path.join(app.getPath('downloads'), name) });
     if (r.canceled || !r.filePath) return false;
-    await fs.promises.writeFile(r.filePath, Buffer.from(buf)); return true;
+    await fs.promises.writeFile(r.filePath, Buffer.from(buf));
+    return true;
 });
 // Only links we put in the UI ourselves may be opened externally.
 const ALLOWED_HOSTS = new Set(['huggingface.co']);
 for (const p of PROVIDERS) {
-    try { ALLOWED_HOSTS.add(new URL(p.docs).host); } catch { /* ignore malformed docs url */ }
+    try {
+        ALLOWED_HOSTS.add(new URL(p.docs).host);
+    } catch {
+        /* ignore malformed docs url */
+    }
 }
 ipcMain.handle('open', (_e, url) => {
     try {
         const u = new URL(String(url));
         if (u.protocol === 'https:' && ALLOWED_HOSTS.has(u.host)) shell.openExternal(u.toString());
-    } catch { /* ignore malformed urls */ }
+    } catch {
+        /* ignore malformed urls */
+    }
 });
 
 // Settings used to live under the previous product name. Copy them over once so
@@ -537,7 +723,9 @@ function migrateUserData() {
         if (!fs.existsSync(legacy)) return;
         fs.mkdirSync(current, { recursive: true });
         fs.copyFileSync(legacy, path.join(current, 'settings.json'));
-    } catch { /* best effort; a fresh settings file is created on first save */ }
+    } catch {
+        /* best effort; a fresh settings file is created on first save */
+    }
 }
 
 app.whenReady().then(() => {
@@ -545,7 +733,12 @@ app.whenReady().then(() => {
     // Match the native title bar and menus to the saved preference before the page paints.
     const theme = read().theme;
     nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
-    const w = new BrowserWindow({ width: 980, height: 760, title: 'Misnomer', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    const w = new BrowserWindow({
+        width: 980,
+        height: 760,
+        title: 'Misnomer',
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+    });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     w.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 });

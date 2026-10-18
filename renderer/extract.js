@@ -44,7 +44,13 @@
 
     // Reduce markup to readable plain text, keeping block boundaries as newlines.
     function xmlToText(xml) {
-        return decodeEntities(String(xml).replace(NOISE, ' ').replace(VOID_TAG, '\n').replace(CLOSE_TAG, '\n').replace(/<[^>]*>/g, ' '))
+        return decodeEntities(
+            String(xml)
+                .replace(NOISE, ' ')
+                .replace(VOID_TAG, '\n')
+                .replace(CLOSE_TAG, '\n')
+                .replace(/<[^>]*>/g, ' ')
+        )
             .replace(/[^\S\n]+/g, ' ')
             .replace(/ ?\n ?/g, '\n')
             .replace(/\n{3,}/g, '\n\n')
@@ -56,7 +62,7 @@
         return String(rtf)
             .replace(/\\'([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
             .replace(/\\u(-?\d+)\s?\??/g, (_, d) => String.fromCharCode(((Number(d) % 65536) + 65536) % 65536))
-            .replace(/\{\\\*[^{}]*\}/g, '')      // ignorable destination groups
+            .replace(/\{\\\*[^{}]*\}/g, '') // ignorable destination groups
             .replace(/\\par[d]?\b/gi, '\n')
             .replace(/\\[a-z]+-?\d* ?/gi, '')
             .replace(/[{}]/g, '')
@@ -81,7 +87,8 @@
 
         if (ext === 'docx') return xmlToText(await read('word/document.xml'));
         if (ext === 'odt') return xmlToText(await read('content.xml'));
-        if (ext === 'pptx') return join(names.filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNo(a) - slideNo(b)));
+        if (ext === 'pptx')
+            return join(names.filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNo(a) - slideNo(b)));
         if (ext === 'epub') return join(names.filter((n) => /\.x?html?$/i.test(n)));
         if (ext === 'xlsx') {
             // Shared strings hold the labels; the sheet XML holds the numbers and formula results.
@@ -104,7 +111,8 @@
             else text = raw;
         }
         // eslint-disable-next-line no-control-regex -- stray NUL bytes survive some decoders and must go
-        return text.replace(/\u0000/g, '').trim().slice(0, MAX_TEXT);
+        const clean = text.replace(/\u0000/g, '');
+        return clean.trim().slice(0, MAX_TEXT);
     }
 
     return { extractText, xmlToText, rtfToText, decodeEntities, TEXT_EXT, MARKUP_EXT, SPECIAL_EXT, ZIP_EXT, OK_EXT, MAX_TEXT };

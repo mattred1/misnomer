@@ -49,12 +49,16 @@ test('extractText: returns plain text files unchanged', async () => {
 });
 
 test('extractText: strips markup from html', async () => {
-    assert.equal(await extractText('html', buf('<html><head><style>p{}</style></head><body><h1>March Report</h1><p>Revenue up</p></body></html>')), 'March Report\nRevenue up');
+    assert.equal(
+        await extractText('html', buf('<html><head><style>p{}</style></head><body><h1>March Report</h1><p>Revenue up</p></body></html>')),
+        'March Report\nRevenue up'
+    );
 });
 
 test('extractText: reads a docx through jszip', async () => {
     const docx = await zipOf({
-        'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>Invoice 2026-03</w:t></w:r></w:p><w:p><w:r><w:t>Acme Corp</w:t></w:r></w:p></w:body></w:document>'
+        'word/document.xml':
+            '<w:document><w:body><w:p><w:r><w:t>Invoice 2026-03</w:t></w:r></w:p><w:p><w:r><w:t>Acme Corp</w:t></w:r></w:p></w:body></w:document>'
     });
     const text = await extractText('docx', docx);
     assert.match(text, /Invoice 2026-03/);

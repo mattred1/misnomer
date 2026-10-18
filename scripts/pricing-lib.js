@@ -75,19 +75,34 @@ function validatePricing(data) {
     if (!data.source || typeof data.source.url !== 'string') errors.push('source.url must be a string');
 
     for (const [provider, rows] of Object.entries(data.families || {})) {
-        if (!Array.isArray(rows)) { errors.push('families.' + provider + ' must be an array'); continue; }
+        if (!Array.isArray(rows)) {
+            errors.push('families.' + provider + ' must be an array');
+            continue;
+        }
         for (const row of rows) {
-            if (!row || typeof row.match !== 'string') { errors.push('families.' + provider + ' has an entry without a match pattern'); continue; }
-            try { new RegExp(row.match); } catch { errors.push('families.' + provider + ' has an invalid pattern: ' + row.match); }
-            if (!validPrice(Number(row.input)) || !validPrice(Number(row.output))) errors.push('families.' + provider + ' has an invalid price for ' + row.match);
+            if (!row || typeof row.match !== 'string') {
+                errors.push('families.' + provider + ' has an entry without a match pattern');
+                continue;
+            }
+            try {
+                new RegExp(row.match);
+            } catch {
+                errors.push('families.' + provider + ' has an invalid pattern: ' + row.match);
+            }
+            if (!validPrice(Number(row.input)) || !validPrice(Number(row.output)))
+                errors.push('families.' + provider + ' has an invalid price for ' + row.match);
         }
     }
 
     for (const [provider, entries] of Object.entries(data.models || {})) {
-        if (!entries || typeof entries !== 'object') { errors.push('models.' + provider + ' must be an object'); continue; }
+        if (!entries || typeof entries !== 'object') {
+            errors.push('models.' + provider + ' must be an object');
+            continue;
+        }
         for (const [id, row] of Object.entries(entries)) {
             if (!id) errors.push('models.' + provider + ' has an empty model id');
-            if (!row || !validPrice(Number(row.input)) || !validPrice(Number(row.output))) errors.push('models.' + provider + '.' + id + ' has an invalid price');
+            if (!row || !validPrice(Number(row.input)) || !validPrice(Number(row.output)))
+                errors.push('models.' + provider + '.' + id + ' has an invalid price');
         }
     }
     return errors;

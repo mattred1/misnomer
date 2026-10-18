@@ -16,7 +16,10 @@
     // Windows reserves these device names in every directory, with or without an extension,
     // so "con.txt" is just as unusable as "con". Matching is case-insensitive.
     const RESERVED = new Set([
-        'con', 'prn', 'aux', 'nul',
+        'con',
+        'prn',
+        'aux',
+        'nul',
         ...Array.from({ length: 9 }, (_, i) => 'com' + (i + 1)),
         ...Array.from({ length: 9 }, (_, i) => 'lpt' + (i + 1))
     ]);
@@ -54,10 +57,10 @@
     // Make a user- or model-supplied name safe to write to disk on macOS, Windows, and Linux.
     function clean(n) {
         let s = String(n == null ? '' : n)
-            .replace(/[\t\n\r\v\f]+/g, ' ')         // whitespace-like controls are word breaks, not deletions
+            .replace(/[\t\n\r\v\f]+/g, ' ') // whitespace-like controls are word breaks, not deletions
             // eslint-disable-next-line no-control-regex -- rejecting control characters is the whole point here
             .replace(/[\u0000-\u001f\u007f]+/g, '') // any other control character is dropped
-            .replace(/[\\/:*?"<>|]+/g, '-')         // illegal on Windows
+            .replace(/[\\/:*?"<>|]+/g, '-') // illegal on Windows
             .replace(/\s+/g, ' ')
             .trim();
         s = stripTrailing(s);
@@ -76,8 +79,9 @@
         const seen = {};
         return (items || []).map((f) => {
             const b = clean(f.name);
-            let k = b + '.' + f.ext, n = 1;
-            while (seen[k.toLowerCase()]) k = b + '-' + (++n) + '.' + f.ext;
+            let k = b + '.' + f.ext,
+                n = 1;
+            while (seen[k.toLowerCase()]) k = b + '-' + ++n + '.' + f.ext;
             seen[k.toLowerCase()] = 1;
             return k;
         });

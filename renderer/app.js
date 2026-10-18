@@ -1,5 +1,11 @@
-const $ = (s) => document.querySelector(s), files = [];
-let S = {}, halt = false, busy = false, uid = 0, haltFile = null, cancelled = false;
+const $ = (s) => document.querySelector(s),
+    files = [];
+let S = {},
+    halt = false,
+    busy = false,
+    uid = 0,
+    haltFile = null,
+    cancelled = false;
 pdfjsLib.GlobalWorkerOptions.workerSrc = '../node_modules/pdfjs-dist/build/pdf.worker.min.js';
 
 // The <option value="..."> ids in the #datefmt select must match main.js's DATE_HINTS keys -
@@ -9,7 +15,9 @@ const DEFAULT_PRESET = { id: 'default', name: 'Default', template: '{title}', se
 // Older builds seeded first-run settings with the four built-in fields; loadS upgrades
 // the untouched starter preset so existing installs pick up the simpler default.
 const LEGACY_DEFAULT_TEMPLATE = '{date}-{entity}-{type}-{title}';
-let presets = [DEFAULT_PRESET], activePreset = 'default', lastSep = DEFAULT_PRESET.sep;
+let presets = [DEFAULT_PRESET],
+    activePreset = 'default',
+    lastSep = DEFAULT_PRESET.sep;
 
 // Rewrites the separator characters already visible in the template input so the raw text
 // matches the newly chosen separator, instead of only affecting names behind the scenes.
@@ -36,59 +44,94 @@ const CANVAS_CONVERT = ['bmp', 'ico', 'svg', 'avif'];
 const SIPS_CONVERT = ['tif', 'tiff', 'heic', 'heif'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', ...CANVAS_CONVERT, ...SIPS_CONVERT];
 const OK_EXT = ['pdf', ...IMAGE_EXT, ...Extract.OK_EXT];
-const OK_HINT = 'PDF, images (PNG, JPG, GIF, WebP, BMP, ICO, SVG, AVIF, TIFF, HEIC), and text or Office files (TXT, MD, CSV, JSON, RTF, DOCX, XLSX, PPTX, ODT, EPUB)';
+const OK_HINT =
+    'PDF, images (PNG, JPG, GIF, WebP, BMP, ICO, SVG, AVIF, TIFF, HEIC), and text or Office files (TXT, MD, CSV, JSON, RTF, DOCX, XLSX, PPTX, ODT, EPUB)';
 // MIME type for the canvas decode path; SVG and ICO need their real type to decode.
 const BLOB_TYPE = { svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp', avif: 'image/avif' };
 
 // Thumbnails stay small and are generated a few at a time, so dropping a large
 // batch does not kick off hundreds of simultaneous decodes.
-const THUMB_MAX = 120, THUMB_WORKERS = 3;
-const thumbCache = new Map(), thumbJobs = new Map(), thumbQueue = [];
-let thumbActive = 0, previewUrl = '';
+const THUMB_MAX = 120,
+    THUMB_WORKERS = 3;
+const thumbCache = new Map(),
+    thumbJobs = new Map(),
+    thumbQueue = [];
+let thumbActive = 0,
+    previewUrl = '';
 // Only draw thumbnails for rows near the viewport; off-screen rows wait until they
 // are scrolled into view, which keeps big batches responsive.
-const thumbObserver = typeof IntersectionObserver === 'function'
-    ? new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            const f = thumbJobs.get(entry.target);
-            thumbObserver.unobserve(entry.target);
-            thumbJobs.delete(entry.target);
-            if (f) queueThumb(f);
-        }
-    }, { rootMargin: '200px' })
-    : null;
+const thumbObserver =
+    typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver(
+              (entries) => {
+                  for (const entry of entries) {
+                      if (!entry.isIntersecting) continue;
+                      const f = thumbJobs.get(entry.target);
+                      thumbObserver.unobserve(entry.target);
+                      thumbJobs.delete(entry.target);
+                      if (f) queueThumb(f);
+                  }
+              },
+              { rootMargin: '200px' }
+          )
+        : null;
 
 // Sample values used only to render the template preview, never sent anywhere.
 const SAMPLE = { date: '2026-03-01', entity: 'acme', type: 'invoice', title: 'march service call' };
 
 // Custom fields are stored as one "name = description" per line.
-const fieldKey = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+const fieldKey = (s) =>
+    (s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 30);
 function fieldDefs() {
-    const defs = $('#fields').value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
-        const i = line.indexOf('=');
-        return { key: fieldKey(i < 0 ? line : line.slice(0, i)), description: i < 0 ? '' : line.slice(i + 1).trim() };
-    }).filter((f) => f.key);
+    const defs = $('#fields')
+        .value.split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+            const i = line.indexOf('=');
+            return { key: fieldKey(i < 0 ? line : line.slice(0, i)), description: i < 0 ? '' : line.slice(i + 1).trim() };
+        })
+        .filter((f) => f.key);
     // A custom field may not shadow a built-in one; those are configured elsewhere in the UI.
     return defs.filter((f, i) => !RESERVED_KEYS.includes(f.key) && defs.findIndex((x) => x.key === f.key) === i);
 }
 
 $('#tpl').oninput = retpl;
-$('#fields').oninput = () => { renderChips(); preview(); };
-$('#sep').onchange = () => { retext(lastSep, $('#sep').value); lastSep = $('#sep').value; retpl(); };
+$('#fields').oninput = () => {
+    renderChips();
+    preview();
+};
+$('#sep').onchange = () => {
+    retext(lastSep, $('#sep').value);
+    lastSep = $('#sep').value;
+    retpl();
+};
 $('#datefmt').onchange = preview;
 function retpl() {
     const sep = $('#sep').value;
-    files.forEach((f) => { if (f.info && !f.edited) { f.name = build(f.info, $('#tpl').value, sep); paint(f); } });
-    renderChips(); preview(); hints();
+    files.forEach((f) => {
+        if (f.info && !f.edited) {
+            f.name = build(f.info, $('#tpl').value, sep);
+            paint(f);
+        }
+    });
+    renderChips();
+    preview();
+    hints();
 }
 function renderChips() {
     const keys = RESERVED_KEYS.concat(fieldDefs().map((f) => f.key));
     $('#chips').innerHTML = '';
     for (const k of keys) {
-        const b = document.createElement('button'); b.textContent = '{' + k + '}';
+        const b = document.createElement('button');
+        b.textContent = '{' + k + '}';
         b.onclick = () => {
-            const v = $('#tpl').value.trim(), sep = $('#sep').value;
+            const v = $('#tpl').value.trim(),
+                sep = $('#sep').value;
             // A separator only belongs between fields, never before the first one.
             $('#tpl').value = v ? v + (v.endsWith(sep) ? '' : sep) + '{' + k + '}' : '{' + k + '}';
             retpl();
@@ -99,8 +142,11 @@ function renderChips() {
 // Shows what the template produces with sample data, and flags placeholders no field will fill.
 // The result is drawn as coloured tokens so each placeholder's contribution is easy to scan.
 function preview() {
-    const t = $('#tpl').value, sep = $('#sep').value, defs = fieldDefs();
-    const used = placeholders(t), known = RESERVED_KEYS.concat(defs.map((f) => f.key));
+    const t = $('#tpl').value,
+        sep = $('#sep').value,
+        defs = fieldDefs();
+    const used = placeholders(t),
+        known = RESERVED_KEYS.concat(defs.map((f) => f.key));
     const unknown = used.filter((k) => !known.includes(k));
     const custom = used.filter((k) => !RESERVED_KEYS.includes(k));
     const sample = { ...SAMPLE, date: Exif.formatDate(SAMPLE.date, $('#datefmt').value) };
@@ -142,7 +188,9 @@ function preview() {
 
     $('#pvnote').textContent = unknown.length
         ? 'Unknown placeholder(s): ' + unknown.map((k) => '{' + k + '}').join(', ')
-        : (custom.length ? 'Custom field(s): ' + custom.map((k) => '{' + k + '}').join(', ') : '');
+        : custom.length
+          ? 'Custom field(s): ' + custom.map((k) => '{' + k + '}').join(', ')
+          : '';
     $('#pvnote').className = unknown.length ? 'mut bad' : 'mut';
 }
 
@@ -150,17 +198,35 @@ function preview() {
 // picker only hand us File objects, so their real paths come from Electron.
 async function addPaths(paths) {
     const list = (paths || []).filter(Boolean);
-    if (!list.length) { $('#msg').textContent = 'That item has no location on disk.'; return; }
+    if (!list.length) {
+        $('#msg').textContent = 'That item has no location on disk.';
+        return;
+    }
     const r = await api.expand(list);
-    if (!r.ok) { $('#msg').textContent = 'Could not read that folder: ' + r.error; return; }
+    if (!r.ok) {
+        $('#msg').textContent = 'Could not read that folder: ' + r.error;
+        return;
+    }
     const rejected = [];
     for (const file of r.files) {
-        if (!OK_EXT.includes(file.ext)) { rejected.push(file.name); continue; }
+        if (!OK_EXT.includes(file.ext)) {
+            rejected.push(file.name);
+            continue;
+        }
         const f = {
-            id: ++uid, path: file.path, dir: file.dir, ext: file.ext,
-            original: file.name, name: file.name.replace(/\.[^.]+$/, ''), st: 'queued', note: '', renamed: false, usage: null
+            id: ++uid,
+            path: file.path,
+            dir: file.dir,
+            ext: file.ext,
+            original: file.name,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            st: 'queued',
+            note: '',
+            renamed: false,
+            usage: null
         };
-        files.push(f); row(f);
+        files.push(f);
+        row(f);
     }
     const notes = [];
     if (!r.files.length) notes.push('No files found here.');
@@ -171,27 +237,48 @@ async function addPaths(paths) {
 }
 function row(f) {
     $('#tc').hidden = false;
-    const tr = document.createElement('tr'); tr.id = 'r' + f.id;
-    tr.innerHTML = '<td><div class="thumb"><span>' + f.ext.toUpperCase() + '</span></div></td>'
-        + '<td class="o"></td><td><div class="nm"><input type="text"><span>.' + f.ext + '</span></div><div class="mut hint" id="h' + f.id + '"></div></td><td><span class="st"></span></td><td><button class="d">Save copy</button></td>';
+    const tr = document.createElement('tr');
+    tr.id = 'r' + f.id;
+    tr.innerHTML =
+        '<td><div class="thumb"><span>' +
+        f.ext.toUpperCase() +
+        '</span></div></td>' +
+        '<td class="o"></td><td><div class="nm"><input type="text"><span>.' +
+        f.ext +
+        '</span></div><div class="mut hint" id="h' +
+        f.id +
+        '"></div></td><td><span class="st"></span></td><td><button class="d">Save copy</button></td>';
     tr.querySelector('.o').textContent = f.original;
     tr.querySelector('.o').title = f.path;
-    const inp = tr.querySelector('input'); inp.value = f.name;
+    const inp = tr.querySelector('input');
+    inp.value = f.name;
     inp.setAttribute('aria-describedby', 'h' + f.id);
-    inp.oninput = () => { f.name = inp.value; f.edited = true; hints(); };
+    inp.oninput = () => {
+        f.name = inp.value;
+        f.edited = true;
+        hints();
+    };
     tr.querySelector('.d').onclick = async () => {
         const r = await api.readFile(f.path);
-        if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
+        if (!r.ok) {
+            $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error;
+            return;
+        }
         save(fin(f), r.bytes);
     };
-    $('#tb').append(tr); paint(f); observeThumb(f, tr.querySelector('.thumb'));
+    $('#tb').append(tr);
+    paint(f);
+    observeThumb(f, tr.querySelector('.thumb'));
 }
 
 // A thumbnail is drawn from the file itself: PDFs render page one, sips formats are
 // converted first, and everything else is decoded by Chromium and scaled down.
 function observeThumb(f, box) {
     if (f.ext !== 'pdf' && !IMAGE_EXT.includes(f.ext)) return;
-    if (!thumbObserver) { queueThumb(f); return; }
+    if (!thumbObserver) {
+        queueThumb(f);
+        return;
+    }
     thumbJobs.set(box, f);
     thumbObserver.observe(box);
 }
@@ -216,13 +303,22 @@ function pumpThumbs() {
                 box.dataset.label = f.original;
                 box.setAttribute('role', 'button');
                 box.setAttribute('aria-label', 'Preview ' + f.original);
-                box.tabIndex = 0; box.onclick = () => showPreview(f);
+                box.tabIndex = 0;
+                box.onclick = () => showPreview(f);
                 box.onkeydown = (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showPreview(f); }
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        showPreview(f);
+                    }
                 };
             })
-            .catch(() => { /* leave the extension badge in place */ })
-            .finally(() => { thumbActive--; pumpThumbs(); });
+            .catch(() => {
+                /* leave the extension badge in place */
+            })
+            .finally(() => {
+                thumbActive--;
+                pumpThumbs();
+            });
     }
 }
 async function thumbFor(f) {
@@ -251,7 +347,11 @@ function pdfPreview(buf, max) {
         c.height = Math.max(1, Math.round(vp.height));
         await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
         return c.toDataURL('image/jpeg', 0.8);
-    })().catch(() => '').finally(() => { if (pdf) pdf.destroy(); });
+    })()
+        .catch(() => '')
+        .finally(() => {
+            if (pdf) pdf.destroy();
+        });
 }
 async function imagePreview(blob, max) {
     let bmp;
@@ -259,7 +359,9 @@ async function imagePreview(blob, max) {
         // Asking for one dimension preserves the aspect ratio. This also avoids
         // decoding a full-size bitmap just to shrink a phone photo into a thumbnail.
         bmp = await createImageBitmap(blob, { resizeWidth: max, resizeQuality: 'high' });
-    } catch { return elementPreview(blob, max); }
+    } catch {
+        return elementPreview(blob, max);
+    }
     try {
         const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
         const c = document.createElement('canvas');
@@ -267,61 +369,100 @@ async function imagePreview(blob, max) {
         c.height = Math.max(1, Math.round(bmp.height * scale));
         c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
         return c.toDataURL('image/jpeg', 0.8);
-    } finally { if (bmp.close) bmp.close(); }
+    } finally {
+        if (bmp.close) bmp.close();
+    }
 }
 // Some decoders (SVG in particular) only work through an <img> element.
 function elementPreview(blob, max) {
     return new Promise((resolve) => {
-        const url = URL.createObjectURL(blob), img = new Image();
+        const url = URL.createObjectURL(blob),
+            img = new Image();
         img.onload = () => {
             try {
-                const w = img.naturalWidth || max, h = img.naturalHeight || max;
+                const w = img.naturalWidth || max,
+                    h = img.naturalHeight || max;
                 const scale = Math.min(1, max / Math.max(w, h));
                 const c = document.createElement('canvas');
                 c.width = Math.max(1, Math.round(w * scale));
                 c.height = Math.max(1, Math.round(h * scale));
                 c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
                 resolve(c.toDataURL('image/jpeg', 0.8));
-            } catch { resolve(''); }
-            finally { URL.revokeObjectURL(url); }
+            } catch {
+                resolve('');
+            } finally {
+                URL.revokeObjectURL(url);
+            }
         };
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(''); };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve('');
+        };
         img.src = url;
     });
 }
 // Clicking a thumbnail opens a larger view of the same first page.
 async function showPreview(f) {
-    const img = $('#imgview'), opener = document.activeElement;
+    const img = $('#imgview'),
+        opener = document.activeElement;
     $('#imgname').textContent = f.original;
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
+    if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = '';
+    }
     img.removeAttribute('src');
     const r = await api.readFile(f.path);
-    if (!r.ok) { $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error; return; }
+    if (!r.ok) {
+        $('#msg').textContent = 'Could not read ' + f.original + ': ' + r.error;
+        return;
+    }
     let src = '';
     if (f.ext === 'pdf') src = await pdfPreview(r.bytes, 1100);
     else if (SIPS_CONVERT.includes(f.ext)) {
         const c = await api.convert(r.bytes, 1100);
-        if (c.ok) { previewUrl = URL.createObjectURL(new Blob([c.bytes], { type: 'image/jpeg' })); src = previewUrl; }
+        if (c.ok) {
+            previewUrl = URL.createObjectURL(new Blob([c.bytes], { type: 'image/jpeg' }));
+            src = previewUrl;
+        }
     } else {
         previewUrl = URL.createObjectURL(new Blob([r.bytes], { type: BLOB_TYPE[f.ext] || 'image/' + f.ext }));
         src = previewUrl;
     }
-    if (!src) { $('#msg').textContent = 'Could not preview ' + f.original + '.'; return; }
+    if (!src) {
+        $('#msg').textContent = 'Could not preview ' + f.original + '.';
+        return;
+    }
     img.alt = f.original;
     img.src = src;
     if (!$('#imgdlg').open) openDialog($('#imgdlg'), opener);
 }
 function paint(f) {
-    const tr = $('#r' + f.id); if (!tr) return;
-    const inp = tr.querySelector('input'); if (document.activeElement !== inp) inp.value = f.name;
+    const tr = $('#r' + f.id);
+    if (!tr) return;
+    const inp = tr.querySelector('input');
+    if (document.activeElement !== inp) inp.value = f.name;
     inp.setAttribute('aria-label', 'New name for ' + f.original);
     const thumb = tr.querySelector('.thumb');
     if (thumb && thumb.classList.contains('has')) {
         thumb.dataset.label = f.original;
         thumb.setAttribute('aria-label', 'Preview ' + f.original);
     }
-    const lab = f.st === 'queued' && halt && !cancelled ? ['Paused', 'mut'] : (f.st === 'done' && f.renamed ? ['Renamed', 'ok'] : { queued: ['Queued', 'mut'], working: ['Reading...', 'work'], done: ['Done', 'ok'], error: ['Failed', 'er'], skipped: ['Skipped', 'mut'] }[f.st]);
-    const s = tr.querySelector('.st'); s.className = 'st ' + lab[1]; s.textContent = lab[0]; s.title = f.note;
+    const lab =
+        f.st === 'queued' && halt && !cancelled
+            ? ['Paused', 'mut']
+            : f.st === 'done' && f.renamed
+              ? ['Renamed', 'ok']
+              : {
+                    queued: ['Queued', 'mut'],
+                    working: ['Reading...', 'work'],
+                    done: ['Done', 'ok'],
+                    error: ['Failed', 'er'],
+                    skipped: ['Skipped', 'mut']
+                }[f.st];
+    const s = tr.querySelector('.st');
+    s.className = 'st ' + lab[1];
+    s.textContent = lab[0];
+    s.title = f.note;
     const save = tr.querySelector('.d');
     save.disabled = f.st === 'working';
     save.setAttribute('aria-label', 'Save a copy of ' + f.original);
@@ -349,12 +490,21 @@ function fmtTokens(n) {
 function renderUsage() {
     const used = files.filter((f) => f.usage);
     const el = $('#usage');
-    if (!used.length) { el.textContent = ''; return; }
-    let input = 0, output = 0, cost = 0, priced = 0;
+    if (!used.length) {
+        el.textContent = '';
+        return;
+    }
+    let input = 0,
+        output = 0,
+        cost = 0,
+        priced = 0;
     for (const f of used) {
         input += f.usage.input || 0;
         output += f.usage.output || 0;
-        if (typeof f.usage.cost === 'number') { cost += f.usage.cost; priced++; }
+        if (typeof f.usage.cost === 'number') {
+            cost += f.usage.cost;
+            priced++;
+        }
     }
     const parts = [fmtTokens(input) + ' in', fmtTokens(output) + ' out'];
     if (used.every((f) => f.usage.local)) parts.push('local, no API cost');
@@ -364,7 +514,9 @@ function renderUsage() {
 }
 // The visual counter updates on every file, but announcements are limited to starts,
 // pauses, 10% milestones, and completion so large batches do not flood screen readers.
-let lastAnnouncedPct = -1, progressActive = false, progressPaused = false;
+let lastAnnouncedPct = -1,
+    progressActive = false,
+    progressPaused = false;
 function updateProgress(total, finished, busy, paused) {
     const show = total > 0 && (busy || paused);
     const pct = total ? Math.round((finished / total) * 100) : 0;
@@ -374,9 +526,7 @@ function updateProgress(total, finished, busy, paused) {
     $('#prog').textContent = show ? finished + ' of ' + total + ' processed' : '';
     const live = $('#progLive');
     if (show) {
-        const text = paused
-            ? 'Paused at ' + finished + ' of ' + total + ' files.'
-            : finished + ' of ' + total + ' files processed.';
+        const text = paused ? 'Paused at ' + finished + ' of ' + total + ' files.' : finished + ' of ' + total + ' files processed.';
         const resumed = progressPaused && !paused;
         if ((!progressActive || paused || resumed || pct - lastAnnouncedPct >= 10) && live.textContent !== text) {
             live.textContent = text;
@@ -395,14 +545,17 @@ function updateProgress(total, finished, busy, paused) {
 }
 function sync() {
     const todo = files.some((f) => f.st !== 'done' && f.st !== 'skipped');
-    $('#go').disabled = busy || !todo; $('#go2').disabled = busy || !todo;
+    $('#go').disabled = busy || !todo;
+    $('#go2').disabled = busy || !todo;
     const any = files.some((f) => f.st === 'done');
-    $('#zip').disabled = !any; $('#zip2').disabled = !any;
+    $('#zip').disabled = !any;
+    $('#zip2').disabled = !any;
     $('#clr').disabled = busy || !files.length;
     $('#clr').hidden = !files.length;
     $('#clr2').disabled = busy;
     const anyErr = files.some((f) => f.st === 'error');
-    $('#retry').disabled = busy || !anyErr; $('#retry2').disabled = busy || !anyErr;
+    $('#retry').disabled = busy || !anyErr;
+    $('#retry2').disabled = busy || !anyErr;
     $('#rename').disabled = busy || !files.some((f) => f.st === 'done');
     $('#undo').disabled = busy || !undoStack.length;
     $('#undo').textContent = undoStack.length ? 'Undo rename (' + undoStack.length + ')' : 'Undo rename';
@@ -413,19 +566,31 @@ function sync() {
     updateProgress(total, finished, busy, paused);
     const hasFiles = total > 0;
     $('#drop').classList.toggle('has-files', hasFiles);
-    $('#droptext').textContent = hasFiles ? 'Drop more files here, or click to choose files' : 'Drop files or folders here, or click to choose files';
+    $('#droptext').textContent = hasFiles
+        ? 'Drop more files here, or click to choose files'
+        : 'Drop files or folders here, or click to choose files';
     hints();
     renderUsage();
 }
-async function save(name, buf) { try { if (await api.save(name, buf)) $('#msg').textContent = 'Saved ' + name; } catch (e) { $('#msg').textContent = 'Save failed: ' + e.message; } }
+async function save(name, buf) {
+    try {
+        if (await api.save(name, buf)) $('#msg').textContent = 'Saved ' + name;
+    } catch (e) {
+        $('#msg').textContent = 'Save failed: ' + e.message;
+    }
+}
 
 async function pdfPrep(buf) {
-    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise, pages = [];
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise,
+        pages = [];
     let text = '';
     for (let i = 1; i <= Math.min(pdf.numPages, 2); i++) {
         const p = await pdf.getPage(i);
         text += (await p.getTextContent()).items.map((t) => t.str).join(' ') + '\n';
-        const vp = p.getViewport({ scale: 1.3 }), c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+        const vp = p.getViewport({ scale: 1.3 }),
+            c = document.createElement('canvas');
+        c.width = vp.width;
+        c.height = vp.height;
         await p.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
         pages.push(await (await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8))).arrayBuffer());
     }
@@ -438,7 +603,8 @@ async function pdfPrep(buf) {
 async function toImage(blob) {
     const bmp = await createImageBitmap(blob);
     const c = document.createElement('canvas');
-    c.width = bmp.width; c.height = bmp.height;
+    c.width = bmp.width;
+    c.height = bmp.height;
     c.getContext('2d').drawImage(bmp, 0, 0);
     if (bmp.close) bmp.close();
     const out = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
@@ -466,8 +632,15 @@ async function analyze(f) {
     const p = await prep(f);
     if (p.kind === 'text' && !p.text) throw new Error('No readable text found in this ' + f.ext.toUpperCase() + ' file.');
     const req = {
-        name: f.original, path: f.path, kind: p.kind, ext: p.ext, bytes: p.bytes, text: p.text,
-        fields: fieldDefs(), dateFormat: $('#datefmt').value, extra: $('#extra').value
+        name: f.original,
+        path: f.path,
+        kind: p.kind,
+        ext: p.ext,
+        bytes: p.bytes,
+        text: p.text,
+        fields: fieldDefs(),
+        dateFormat: $('#datefmt').value,
+        extra: $('#extra').value
     };
     // Providers that cannot take a PDF directly get page images from the renderer.
     if (S.pdfMode === 'pages' && p.kind === 'document') Object.assign(req, await pdfPrep(p.bytes.slice(0)));
@@ -476,14 +649,30 @@ async function analyze(f) {
     return r;
 }
 async function run() {
-    S = await api.getSettings(); halt = false; cancelled = false; haltFile = null; busy = true;
-    lastAnnouncedPct = -1; progressActive = false; progressPaused = false;
-    $('#err').hidden = true; $('#msg').textContent = '';
-    const q = files.filter((f) => f.st !== 'done' && f.st !== 'skipped'); q.forEach((f) => { f.st = 'queued'; f.note = ''; paint(f); }); sync();
+    S = await api.getSettings();
+    halt = false;
+    cancelled = false;
+    haltFile = null;
+    busy = true;
+    lastAnnouncedPct = -1;
+    progressActive = false;
+    progressPaused = false;
+    $('#err').hidden = true;
+    $('#msg').textContent = '';
+    const q = files.filter((f) => f.st !== 'done' && f.st !== 'skipped');
+    q.forEach((f) => {
+        f.st = 'queued';
+        f.note = '';
+        paint(f);
+    });
+    sync();
     const sep = $('#sep').value;
     const worker = async () => {
         for (let f; !halt && (f = q.shift());) {
-            f.st = 'working'; f.usage = null; paint(f); sync();
+            f.st = 'working';
+            f.usage = null;
+            paint(f);
+            sync();
             try {
                 const r = await analyze(f);
                 f.info = r.info;
@@ -492,14 +681,17 @@ async function run() {
                 if (f.info.dateSource === 'exif') f.note = 'Date taken from the photo\u2019s EXIF metadata';
                 if (!f.edited) f.name = build(f.info, $('#tpl').value, sep);
                 f.st = 'done';
-            }
-            catch (e) {
+            } catch (e) {
                 // A cancelled file goes back in the queue rather than being marked failed.
-                if (cancelled) { f.st = 'queued'; f.note = ''; }
-                else {
-                    f.st = 'error'; f.note = e.message;
+                if (cancelled) {
+                    f.st = 'queued';
+                    f.note = '';
+                } else {
+                    f.st = 'error';
+                    f.note = e.message;
                     if (!halt) {
-                        halt = true; haltFile = f;
+                        halt = true;
+                        haltFile = f;
                         $('#errmsg').textContent = f.original + ': ' + e.message;
                         const box = $('#err');
                         box.hidden = false;
@@ -507,25 +699,41 @@ async function run() {
                     }
                 }
             }
-            paint(f); sync();
+            paint(f);
+            sync();
         }
     };
     await Promise.all(Array.from({ length: S.engine === 'local' ? 1 : 2 }, worker));
-    busy = false; $('#prog').textContent = ''; files.forEach(paint); sync();
+    busy = false;
+    $('#prog').textContent = '';
+    files.forEach(paint);
+    sync();
 }
 function cancelRun() {
     if (!busy) return;
-    cancelled = true; halt = true;
+    cancelled = true;
+    halt = true;
     api.abort();
     $('#msg').textContent = 'Cancelling...';
 }
 function skipAndResume() {
-    if (haltFile) { haltFile.st = 'skipped'; haltFile.note = (haltFile.note ? haltFile.note + ' (skipped)' : 'Skipped after error'); paint(haltFile); haltFile = null; }
+    if (haltFile) {
+        haltFile.st = 'skipped';
+        haltFile.note = haltFile.note ? haltFile.note + ' (skipped)' : 'Skipped after error';
+        paint(haltFile);
+        haltFile = null;
+    }
     run();
 }
 // Re-queue only the rows that failed, leaving already-finished work untouched.
 function retryFailed() {
-    files.forEach((f) => { if (f.st === 'error') { f.st = 'queued'; f.note = ''; paint(f); } });
+    files.forEach((f) => {
+        if (f.st === 'error') {
+            f.st = 'queued';
+            f.note = '';
+            paint(f);
+        }
+    });
     run();
 }
 // Renames every finished row inside its own folder. Collisions are resolved against
@@ -534,9 +742,15 @@ async function renameAll() {
     const rows = files.filter((f) => f.st === 'done');
     if (!rows.length) return;
     const existing = await api.existing(Rename.dirsOf(rows.map((f) => f.path)));
-    const plan = Rename.planRenames(rows.map((f) => ({ id: f.id, from: f.path, name: clean(f.name), ext: f.ext })), existing);
+    const plan = Rename.planRenames(
+        rows.map((f) => ({ id: f.id, from: f.path, name: clean(f.name), ext: f.ext })),
+        existing
+    );
     const todo = plan.filter((p) => p.changed);
-    if (!todo.length) { $('#msg').textContent = 'Every file already has the name shown.'; return; }
+    if (!todo.length) {
+        $('#msg').textContent = 'Every file already has the name shown.';
+        return;
+    }
 
     const dirs = [...new Set(todo.map((p) => p.dir))];
     const where = dirs.length === 1 ? dirs[0] : dirs.length + ' folders';
@@ -544,22 +758,30 @@ async function renameAll() {
     if (!window.confirm('Rename ' + todo.length + ' file' + plural + ' in ' + where + '?')) return;
 
     const results = await api.rename(todo.map((p) => ({ id: p.id, from: p.from, to: p.path })));
-    const entries = [], failed = [];
+    const entries = [],
+        failed = [];
     for (const r of results) {
-        const p = todo.find((x) => x.id === r.id), f = files.find((x) => x.id === r.id);
+        const p = todo.find((x) => x.id === r.id),
+            f = files.find((x) => x.id === r.id);
         if (!p || !f) continue;
         if (r.ok) {
             entries.push({ id: f.id, from: p.from, to: p.path });
-            f.path = p.path; f.dir = p.dir; f.original = p.target; f.renamed = true; f.note = '';
+            f.path = p.path;
+            f.dir = p.dir;
+            f.original = p.target;
+            f.renamed = true;
+            f.note = '';
         } else {
             failed.push(f.original + ': ' + r.error);
             f.note = r.error;
         }
     }
     if (entries.length) undoStack.push({ entries });
-    $('#msg').textContent = (entries.length ? 'Renamed ' + entries.length + ' file' + (entries.length === 1 ? '' : 's') + '.' : '')
-        + (failed.length ? ' Failed: ' + failed.join('; ') : '');
-    files.forEach(paint); sync();
+    $('#msg').textContent =
+        (entries.length ? 'Renamed ' + entries.length + ' file' + (entries.length === 1 ? '' : 's') + '.' : '') +
+        (failed.length ? ' Failed: ' + failed.join('; ') : '');
+    files.forEach(paint);
+    sync();
 }
 // Reverts the most recent rename batch, unwinding its entries in reverse order.
 async function undoLast() {
@@ -572,13 +794,19 @@ async function undoLast() {
     const failedIds = results.filter((r) => !r.ok).map((r) => r.id);
     let restored = 0;
     for (const r of results) {
-        const p = ok.find((x) => x.id === r.id), f = files.find((x) => x.id === r.id);
+        const p = ok.find((x) => x.id === r.id),
+            f = files.find((x) => x.id === r.id);
         if (!p || !f) continue;
         if (r.ok) {
             restored++;
-            f.path = p.to; f.dir = Rename.dirOf(p.to); f.original = Rename.baseOf(p.to);
-            f.renamed = false; f.note = '';
-        } else { f.note = r.error; }
+            f.path = p.to;
+            f.dir = Rename.dirOf(p.to);
+            f.original = Rename.baseOf(p.to);
+            f.renamed = false;
+            f.note = '';
+        } else {
+            f.note = r.error;
+        }
     }
     // Anything that could not be moved back stays on the stack for another attempt.
     const retry = plan.filter((p) => p.ok && failedIds.includes(p.id)).map((p) => ({ id: p.id, from: p.to, to: p.from }));
@@ -591,10 +819,12 @@ async function undoLast() {
     if (blocked.length) notes.push(blocked.length + ' skipped: the original name is taken or the file is gone.');
     if (!notes.length) notes.push('Nothing to undo.');
     $('#msg').textContent = notes.join(' ');
-    files.forEach(paint); sync();
+    files.forEach(paint);
+    sync();
 }
 async function zipAll() {
-    const z = new JSZip(), ns = names();
+    const z = new JSZip(),
+        ns = names();
     for (let i = 0; i < files.length; i++) {
         const f = files[i];
         if (f.st !== 'done') continue;
@@ -604,11 +834,19 @@ async function zipAll() {
     save('renamed-files.zip', await z.generateAsync({ type: 'arraybuffer' }));
 }
 function clearAll() {
-    files.length = 0; undoStack.length = 0; thumbCache.clear(); thumbQueue.length = 0;
+    files.length = 0;
+    undoStack.length = 0;
+    thumbCache.clear();
+    thumbQueue.length = 0;
     if (thumbObserver) thumbObserver.disconnect();
     thumbJobs.clear();
-    $('#tb').innerHTML = ''; $('#tc').hidden = true; $('#err').hidden = true;
-    halt = false; haltFile = null; $('#msg').textContent = ''; sync();
+    $('#tb').innerHTML = '';
+    $('#tc').hidden = true;
+    $('#err').hidden = true;
+    halt = false;
+    haltFile = null;
+    $('#msg').textContent = '';
+    sync();
 }
 $('#go').onclick = $('#go2').onclick = run;
 $('#skip2').onclick = skipAndResume;
@@ -620,14 +858,18 @@ $('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
 $('#imgclose').onclick = () => $('#imgdlg').close();
 $('#imgdlg').addEventListener('close', () => {
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = ''; }
+    if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = '';
+    }
     $('#imgview').removeAttribute('src');
     $('#imgview').alt = '';
 });
 
 // Modal dialogs: focus the first control on open, keep Tab inside, and restore
 // focus to whatever opened the dialog when it closes.
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+    'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const dialogReturn = new WeakMap();
 const dialogItems = (dlg) => [...dlg.querySelectorAll(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
 function openDialog(dlg, opener) {
@@ -641,9 +883,15 @@ function trapFocus(dlg) {
         if (e.key !== 'Tab') return;
         const items = dialogItems(dlg);
         if (!items.length) return;
-        const first = items[0], last = items[items.length - 1];
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        const first = items[0],
+            last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
     });
     dlg.addEventListener('close', () => {
         const back = dialogReturn.get(dlg);
@@ -660,7 +908,9 @@ function dismissOnBackdrop(dlg) {
         const r = dlg.getBoundingClientRect();
         return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
     };
-    dlg.addEventListener('pointerdown', (e) => { pressedOutside = e.target === dlg && outside(e); });
+    dlg.addEventListener('pointerdown', (e) => {
+        pressedOutside = e.target === dlg && outside(e);
+    });
     dlg.addEventListener('click', (e) => {
         if (pressedOutside && e.target === dlg && outside(e)) dlg.close();
         pressedOutside = false;
@@ -673,18 +923,31 @@ dismissOnBackdrop($('#imgdlg'));
 $('#okhint').textContent = '(' + OK_HINT + ')';
 // Keep the picker in sync with the formats the app actually accepts.
 $('#fi').accept = OK_EXT.map((e) => '.' + e).join(',');
-const drop = $('#drop'); drop.onclick = () => $('#fi').click();
+const drop = $('#drop');
+drop.onclick = () => $('#fi').click();
 drop.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#fi').click(); }
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        $('#fi').click();
+    }
 });
-$('#pickFolder').onclick = async () => { const d = await api.pickFolder(); if (d) addPaths([d]); };
-$('#fi').onchange = (e) => { addPaths([...e.target.files].map((f) => api.pathFor(f))); e.target.value = ''; };
+$('#pickFolder').onclick = async () => {
+    const d = await api.pickFolder();
+    if (d) addPaths([d]);
+};
+$('#fi').onchange = (e) => {
+    addPaths([...e.target.files].map((f) => api.pathFor(f)));
+    e.target.value = '';
+};
 // Files can be dropped anywhere in the window, not just on the drop zone. The depth
 // counter absorbs the dragenter/dragleave churn as the pointer crosses child elements.
 const dropmask = $('#dropmask');
 let dragDepth = 0;
 const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
-const setDragging = (on) => { dropmask.hidden = !on; drop.classList.toggle('over', on); };
+const setDragging = (on) => {
+    dropmask.hidden = !on;
+    drop.classList.toggle('over', on);
+};
 window.addEventListener('dragenter', (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
@@ -702,8 +965,14 @@ window.addEventListener('dragleave', (e) => {
     dragDepth = e.relatedTarget ? Math.max(0, dragDepth - 1) : 0;
     if (!dragDepth) setDragging(false);
 });
-window.addEventListener('dragend', () => { dragDepth = 0; setDragging(false); });
-window.addEventListener('blur', () => { dragDepth = 0; setDragging(false); });
+window.addEventListener('dragend', () => {
+    dragDepth = 0;
+    setDragging(false);
+});
+window.addEventListener('blur', () => {
+    dragDepth = 0;
+    setDragging(false);
+});
 // Dropped folders arrive as File entries too; files:expand walks them recursively.
 window.addEventListener('drop', (e) => {
     if (!isFileDrag(e)) return;
@@ -721,7 +990,8 @@ window.addEventListener('resize', measureActions);
 measureActions();
 
 // Global shortcuts. Text fields keep their native undo and Escape behavior.
-const isEditableTarget = (el) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+const isEditableTarget = (el) =>
+    el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 window.addEventListener('keydown', (e) => {
     if ($('#dlg').open || $('#imgdlg').open) return;
     const mod = e.metaKey || e.ctrlKey;
@@ -752,7 +1022,10 @@ window.addEventListener('keydown', (e) => {
 });
 
 function applyPreset(p) {
-    $('#tpl').value = p.template; $('#sep').value = p.sep; $('#datefmt').value = p.dateFormat; $('#extra').value = p.extra || '';
+    $('#tpl').value = p.template;
+    $('#sep').value = p.sep;
+    $('#datefmt').value = p.dateFormat;
+    $('#extra').value = p.extra || '';
     $('#fields').value = (p.fields || []).map((f) => f.key + (f.description ? ' = ' + f.description : '')).join('\n');
     lastSep = p.sep;
     retpl();
@@ -762,15 +1035,33 @@ function renderPresetSel() {
     $('#presetSel').value = activePreset;
 }
 function currentPresetFields(name, id) {
-    return { id: id || ('p' + Date.now()), name, template: $('#tpl').value, sep: $('#sep').value, dateFormat: $('#datefmt').value, extra: $('#extra').value, fields: fieldDefs() };
+    return {
+        id: id || 'p' + Date.now(),
+        name,
+        template: $('#tpl').value,
+        sep: $('#sep').value,
+        dateFormat: $('#datefmt').value,
+        extra: $('#extra').value,
+        fields: fieldDefs()
+    };
 }
-async function persistPresets() { await api.setSettings({ presets, activePreset }); }
-$('#presetSel').onchange = () => { activePreset = $('#presetSel').value; const p = presets.find((x) => x.id === activePreset); if (p) applyPreset(p); persistPresets(); };
+async function persistPresets() {
+    await api.setSettings({ presets, activePreset });
+}
+$('#presetSel').onchange = () => {
+    activePreset = $('#presetSel').value;
+    const p = presets.find((x) => x.id === activePreset);
+    if (p) applyPreset(p);
+    persistPresets();
+};
 $('#presetSave').onclick = () => {
     const name = (window.prompt('Name this preset:', '') || '').trim();
     if (!name) return;
     const p = currentPresetFields(name);
-    presets.push(p); activePreset = p.id; renderPresetSel(); persistPresets();
+    presets.push(p);
+    activePreset = p.id;
+    renderPresetSel();
+    persistPresets();
 };
 $('#presetUpdate').onclick = () => {
     const i = presets.findIndex((p) => p.id === activePreset);
@@ -779,17 +1070,29 @@ $('#presetUpdate').onclick = () => {
     persistPresets();
 };
 $('#presetDelete').onclick = () => {
-    if (presets.length <= 1) { $('#msg').textContent = "Can't delete the only preset."; return; }
+    if (presets.length <= 1) {
+        $('#msg').textContent = "Can't delete the only preset.";
+        return;
+    }
     if (!window.confirm('Delete the "' + presets.find((p) => p.id === activePreset).name + '" preset?')) return;
     presets = presets.filter((p) => p.id !== activePreset);
     activePreset = presets[0].id;
-    renderPresetSel(); applyPreset(presets[0]); persistPresets();
+    renderPresetSel();
+    applyPreset(presets[0]);
+    persistPresets();
 };
 
 const { LIST: PROVIDERS, providerById } = window.Providers;
 
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const hostOf = (url) => { try { return new URL(url).host; } catch { return url; } };
+const esc = (s) =>
+    String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const hostOf = (url) => {
+    try {
+        return new URL(url).host;
+    } catch {
+        return url;
+    }
+};
 
 // Green/amber/red dot plus its caption.
 function setConn(state, text) {
@@ -813,7 +1116,9 @@ function setModelOptions(list, emptyText, selected) {
 function applyTheme(pref) {
     const theme = ['light', 'dark'].includes(pref) ? pref : 'auto';
     document.documentElement.dataset.theme = theme;
-    document.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = r.value === theme; });
+    document.querySelectorAll('input[name=theme]').forEach((r) => {
+        r.checked = r.value === theme;
+    });
 }
 function syncEngine() {
     const cloud = document.querySelector('input[name=engine]:checked').value === 'cloud';
@@ -871,7 +1176,7 @@ async function loadS(full) {
     $('#lb').textContent = S.llamaServer || (S.detectedBin ? 'Auto-detected: ' + S.detectedBin : 'Not found');
     await refreshProvider();
     if (!full) return;
-    presets = (S.presets && S.presets.length) ? S.presets : [DEFAULT_PRESET];
+    presets = S.presets && S.presets.length ? S.presets : [DEFAULT_PRESET];
     activePreset = presets.find((p) => p.id === S.activePreset) ? S.activePreset : presets[0].id;
     // Upgrade the untouched starter preset from builds that defaulted to four fields.
     const starter = presets.find((p) => p.id === 'default' && p.name === 'Default');
@@ -883,29 +1188,66 @@ async function loadS(full) {
     const active = presets.find((p) => p.id === activePreset);
     if (active) applyPreset(active);
 }
-$('#gear').onclick = () => { if ($('#dlg').open) return; openDialog($('#dlg'), $('#gear')); loadS(); };
+$('#gear').onclick = () => {
+    if ($('#dlg').open) return;
+    openDialog($('#dlg'), $('#gear'));
+    loadS();
+};
 $('#close').onclick = () => $('#dlg').close();
-document.querySelectorAll('input[name=engine]').forEach((r) => r.onchange = async () => { await api.setSettings({ engine: r.value }); syncEngine(); });
-document.querySelectorAll('input[name=theme]').forEach((r) => r.onchange = async () => {
-    applyTheme(r.value);
-    await api.setSettings({ theme: r.value });
-});
-$('#providerSel').onchange = async () => { await api.setSettings({ provider: $('#providerSel').value }); await loadS(); };
+document.querySelectorAll('input[name=engine]').forEach(
+    (r) =>
+        (r.onchange = async () => {
+            await api.setSettings({ engine: r.value });
+            syncEngine();
+        })
+);
+document.querySelectorAll('input[name=theme]').forEach(
+    (r) =>
+        (r.onchange = async () => {
+            applyTheme(r.value);
+            await api.setSettings({ theme: r.value });
+        })
+);
+$('#providerSel').onchange = async () => {
+    await api.setSettings({ provider: $('#providerSel').value });
+    await loadS();
+};
 $('#modelSel').onchange = () => api.setSettings({ provider: $('#providerSel').value, model: $('#modelSel').value });
 $('#mrefresh').onclick = () => refreshProvider();
-$('#keyhelp').onclick = (e) => { const a = e.target.closest('a[data-docs]'); if (a) { e.preventDefault(); api.open(a.dataset.docs); } };
+$('#keyhelp').onclick = (e) => {
+    const a = e.target.closest('a[data-docs]');
+    if (a) {
+        e.preventDefault();
+        api.open(a.dataset.docs);
+    }
+};
 $('#ksave').onclick = async () => {
     const k = $('#key').value.trim();
     if (!k) return;
     const r = await api.setSettings({ provider: $('#providerSel').value, apiKey: k });
     $('#key').value = '';
-    if (!r.ok) { setConn('er', r.error); return; }
+    if (!r.ok) {
+        setConn('er', r.error);
+        return;
+    }
     await loadS();
 };
-$('#kdel').onclick = async () => { await api.setSettings({ provider: $('#providerSel').value, clearKey: true }); await loadS(); };
-document.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => {
-    const p = await api.pick(b.dataset.pick === 'llamaServer' ? 'bin' : 'gguf');
-    if (p) { await api.setSettings({ [b.dataset.pick]: p }); await loadS(); }
-});
-$('#hf').onclick = (e) => { e.preventDefault(); api.open('https://huggingface.co/models?pipeline_tag=image-text-to-text&sort=trending&search=gguf'); };
+$('#kdel').onclick = async () => {
+    await api.setSettings({ provider: $('#providerSel').value, clearKey: true });
+    await loadS();
+};
+document.querySelectorAll('[data-pick]').forEach(
+    (b) =>
+        (b.onclick = async () => {
+            const p = await api.pick(b.dataset.pick === 'llamaServer' ? 'bin' : 'gguf');
+            if (p) {
+                await api.setSettings({ [b.dataset.pick]: p });
+                await loadS();
+            }
+        })
+);
+$('#hf').onclick = (e) => {
+    e.preventDefault();
+    api.open('https://huggingface.co/models?pipeline_tag=image-text-to-text&sort=trending&search=gguf');
+};
 loadS(true);

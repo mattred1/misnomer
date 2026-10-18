@@ -6,7 +6,11 @@ const enc = new TextEncoder();
 
 // Builds a minimal TIFF block with the date tags the parser looks for.
 function buildTiff({ le = true, original = '', digitized = '', modified = '', ifd0Original = '' }) {
-    const text = (s) => { const b = new Uint8Array(20); b.set(enc.encode(s)); return b; };
+    const text = (s) => {
+        const b = new Uint8Array(20);
+        b.set(enc.encode(s));
+        return b;
+    };
     const hasExif = !!(original || digitized);
     const ifd0Count = (modified ? 1 : 0) + (ifd0Original ? 1 : 0) + (hasExif ? 1 : 0);
     const exifCount = (original ? 1 : 0) + (digitized ? 1 : 0);
@@ -14,7 +18,11 @@ function buildTiff({ le = true, original = '', digitized = '', modified = '', if
     const exifOff = ifd0Off + 2 + ifd0Count * 12 + 4;
     let dataOff = hasExif ? exifOff + 2 + exifCount * 12 + 4 : ifd0Off + 2 + ifd0Count * 12 + 4;
 
-    const reserve = () => { const at = dataOff; dataOff += 20; return at; };
+    const reserve = () => {
+        const at = dataOff;
+        dataOff += 20;
+        return at;
+    };
     const modifiedAt = modified ? reserve() : 0;
     const ifd0OriginalAt = ifd0Original ? reserve() : 0;
     const originalAt = original ? reserve() : 0;
@@ -22,20 +30,32 @@ function buildTiff({ le = true, original = '', digitized = '', modified = '', if
 
     const buf = new Uint8Array(dataOff);
     const u16 = (p, v) => {
-        if (le) { buf[p] = v & 255; buf[p + 1] = (v >> 8) & 255; }
-        else { buf[p] = (v >> 8) & 255; buf[p + 1] = v & 255; }
+        if (le) {
+            buf[p] = v & 255;
+            buf[p + 1] = (v >> 8) & 255;
+        } else {
+            buf[p] = (v >> 8) & 255;
+            buf[p + 1] = v & 255;
+        }
     };
     const u32 = (p, v) => {
         if (le) {
-            buf[p] = v & 255; buf[p + 1] = (v >> 8) & 255;
-            buf[p + 2] = (v >> 16) & 255; buf[p + 3] = (v >>> 24) & 255;
+            buf[p] = v & 255;
+            buf[p + 1] = (v >> 8) & 255;
+            buf[p + 2] = (v >> 16) & 255;
+            buf[p + 3] = (v >>> 24) & 255;
         } else {
-            buf[p] = (v >>> 24) & 255; buf[p + 1] = (v >> 16) & 255;
-            buf[p + 2] = (v >> 8) & 255; buf[p + 3] = v & 255;
+            buf[p] = (v >>> 24) & 255;
+            buf[p + 1] = (v >> 16) & 255;
+            buf[p + 2] = (v >> 8) & 255;
+            buf[p + 3] = v & 255;
         }
     };
     const tag = (at, id, type, count, value) => {
-        u16(at, id); u16(at + 2, type); u32(at + 4, count); u32(at + 8, value);
+        u16(at, id);
+        u16(at + 2, type);
+        u32(at + 4, count);
+        u32(at + 8, value);
     };
 
     buf[0] = le ? 0x49 : 0x4d;
@@ -45,16 +65,35 @@ function buildTiff({ le = true, original = '', digitized = '', modified = '', if
 
     u16(ifd0Off, ifd0Count);
     let e = ifd0Off + 2;
-    if (modified) { tag(e, 0x0132, 2, 20, modifiedAt); buf.set(text(modified), modifiedAt); e += 12; }
-    if (ifd0Original) { tag(e, 0x9003, 2, 20, ifd0OriginalAt); buf.set(text(ifd0Original), ifd0OriginalAt); e += 12; }
-    if (hasExif) { tag(e, 0x8769, 4, 1, exifOff); e += 12; }
+    if (modified) {
+        tag(e, 0x0132, 2, 20, modifiedAt);
+        buf.set(text(modified), modifiedAt);
+        e += 12;
+    }
+    if (ifd0Original) {
+        tag(e, 0x9003, 2, 20, ifd0OriginalAt);
+        buf.set(text(ifd0Original), ifd0OriginalAt);
+        e += 12;
+    }
+    if (hasExif) {
+        tag(e, 0x8769, 4, 1, exifOff);
+        e += 12;
+    }
     u32(e, 0);
 
     if (hasExif) {
         u16(exifOff, exifCount);
         let x = exifOff + 2;
-        if (original) { tag(x, 0x9003, 2, 20, originalAt); buf.set(text(original), originalAt); x += 12; }
-        if (digitized) { tag(x, 0x9004, 2, 20, digitizedAt); buf.set(text(digitized), digitizedAt); x += 12; }
+        if (original) {
+            tag(x, 0x9003, 2, 20, originalAt);
+            buf.set(text(original), originalAt);
+            x += 12;
+        }
+        if (digitized) {
+            tag(x, 0x9004, 2, 20, digitizedAt);
+            buf.set(text(digitized), digitizedAt);
+            x += 12;
+        }
         u32(x, 0);
     }
     return buf;
@@ -72,10 +111,19 @@ function pngWith(tiff) {
     const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
     const n = tiff.length;
     const chunk = [
-        (n >>> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255,
-        0x65, 0x58, 0x49, 0x66, // "eXIf"
+        (n >>> 24) & 255,
+        (n >> 16) & 255,
+        (n >> 8) & 255,
+        n & 255,
+        0x65,
+        0x58,
+        0x49,
+        0x66, // "eXIf"
         ...tiff,
-        0, 0, 0, 0 // CRC, not validated by the parser
+        0,
+        0,
+        0,
+        0 // CRC, not validated by the parser
     ];
     return new Uint8Array([...sig, ...chunk]);
 }

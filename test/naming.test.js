@@ -123,32 +123,49 @@ test('extOf: lowercases and handles missing extensions', () => {
 
 test('names: appends a suffix when two rows collide', () => {
     assert.deepEqual(
-        names([{ name: 'invoice', ext: 'pdf' }, { name: 'invoice', ext: 'pdf' }]),
+        names([
+            { name: 'invoice', ext: 'pdf' },
+            { name: 'invoice', ext: 'pdf' }
+        ]),
         ['invoice.pdf', 'invoice-2.pdf']
     );
     assert.deepEqual(
-        names([{ name: 'invoice', ext: 'pdf' }, { name: 'invoice', ext: 'pdf' }, { name: 'invoice', ext: 'pdf' }]),
+        names([
+            { name: 'invoice', ext: 'pdf' },
+            { name: 'invoice', ext: 'pdf' },
+            { name: 'invoice', ext: 'pdf' }
+        ]),
         ['invoice.pdf', 'invoice-2.pdf', 'invoice-3.pdf']
     );
 });
 
 test('names: collision detection is case-insensitive', () => {
     assert.deepEqual(
-        names([{ name: 'Invoice', ext: 'pdf' }, { name: 'invoice', ext: 'PDF' }]),
+        names([
+            { name: 'Invoice', ext: 'pdf' },
+            { name: 'invoice', ext: 'PDF' }
+        ]),
         ['Invoice.pdf', 'invoice-2.PDF']
     );
 });
 
 test('names: a name that already looks suffixed still resolves', () => {
     assert.deepEqual(
-        names([{ name: 'x', ext: 'pdf' }, { name: 'x-2', ext: 'pdf' }, { name: 'x', ext: 'pdf' }]),
+        names([
+            { name: 'x', ext: 'pdf' },
+            { name: 'x-2', ext: 'pdf' },
+            { name: 'x', ext: 'pdf' }
+        ]),
         ['x.pdf', 'x-2.pdf', 'x-3.pdf']
     );
 });
 
 test('names: different extensions do not collide', () => {
     assert.deepEqual(
-        names([{ name: 'photo', ext: 'jpg' }, { name: 'photo', ext: 'png' }]),
+        names([
+            { name: 'photo', ext: 'jpg' },
+            { name: 'photo', ext: 'png' }
+        ]),
         ['photo.jpg', 'photo.png']
     );
 });

@@ -1,11 +1,29 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
-const call = (c) => (...a) => ipcRenderer.invoke(c, ...a);
+const call =
+    (c) =>
+    (...a) =>
+        ipcRenderer.invoke(c, ...a);
 contextBridge.exposeInMainWorld('api', {
-    getSettings: call('settings:get'), setSettings: call('settings:set'),
-    pick: call('pick'), pickFolder: call('pickFolder'), analyze: call('analyze'), save: call('save'), open: call('open'),
-    abort: call('abort'), convert: call('convert'),
+    getSettings: call('settings:get'),
+    setSettings: call('settings:set'),
+    pick: call('pick'),
+    pickFolder: call('pickFolder'),
+    analyze: call('analyze'),
+    save: call('save'),
+    open: call('open'),
+    abort: call('abort'),
+    convert: call('convert'),
     // Dropped and picked files no longer carry a path of their own, so ask Electron for it.
-    pathFor: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
-    expand: call('files:expand'), readFile: call('files:read'), existing: call('files:existing'), rename: call('files:rename'),
+    pathFor: (file) => {
+        try {
+            return webUtils.getPathForFile(file);
+        } catch {
+            return '';
+        }
+    },
+    expand: call('files:expand'),
+    readFile: call('files:read'),
+    existing: call('files:existing'),
+    rename: call('files:rename'),
     listModels: call('models:list')
 });

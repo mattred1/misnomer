@@ -13,8 +13,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Batch processing** — drop a folder's worth of files at once, watch per-file status with a batch progress bar, and fix any name inline before saving. The action bar and table header stay pinned while long batches scroll.
 - **Light and dark themes** — choose **Auto** (follow the system setting, the default), **Light**, or **Dark** in Settings; the choice is saved with the rest of the app settings.
 - **Two engines**
-  - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
-  - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
+    - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
+    - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
 - **Live model list** — the model dropdown is populated from the selected provider's own catalogue, so only models your key can actually reach are offered.
 - **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
 - **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
@@ -41,15 +41,15 @@ Everything runs locally except the files you send to a cloud model. Your API key
 
 ## Supported file types
 
-| Type | Extensions | How it is read |
-| --- | --- | --- |
-| Documents | `.pdf` | Sent as a native document to Anthropic and Gemini. Providers that speak OpenAI chat completions cannot take a PDF, so the first 2 pages are rendered to JPEG images instead. |
-| Images (native) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` | Sent to the model directly |
-| Images (canvas) | `.bmp`, `.ico`, `.svg`, `.avif` | Chromium can decode these but the model APIs won't accept them, so they are re-encoded to JPEG in the app. The file on disk keeps its original format. |
-| Images (sips) | `.tif`, `.tiff`, `.heic`, `.heif` | Chromium cannot decode these at all, so macOS `sips` converts them to JPEG in the main process. macOS only. |
-| Text | `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.log`, `.yml`, `.yaml`, `.srt`, `.vtt` | Read as UTF-8 and sent in the prompt |
-| Markup | `.html`, `.htm`, `.xml`, `.rtf` | Tagged content is stripped down to readable text before being sent |
-| Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text |
+| Type            | Extensions                                                                                   | How it is read                                                                                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documents       | `.pdf`                                                                                       | Sent as a native document to Anthropic and Gemini. Providers that speak OpenAI chat completions cannot take a PDF, so the first 2 pages are rendered to JPEG images instead. |
+| Images (native) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`                                                     | Sent to the model directly                                                                                                                                                   |
+| Images (canvas) | `.bmp`, `.ico`, `.svg`, `.avif`                                                              | Chromium can decode these but the model APIs won't accept them, so they are re-encoded to JPEG in the app. The file on disk keeps its original format.                       |
+| Images (sips)   | `.tif`, `.tiff`, `.heic`, `.heif`                                                            | Chromium cannot decode these at all, so macOS `sips` converts them to JPEG in the main process. macOS only.                                                                  |
+| Text            | `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.log`, `.yml`, `.yaml`, `.srt`, `.vtt` | Read as UTF-8 and sent in the prompt                                                                                                                                         |
+| Markup          | `.html`, `.htm`, `.xml`, `.rtf`                                                              | Tagged content is stripped down to readable text before being sent                                                                                                           |
+| Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub`                                                   | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text                                                                               |
 
 Text is capped at 12,000 characters per file before it goes into a prompt. The file picker is limited to these formats, and the drop zone lists anything else as skipped.
 
@@ -76,26 +76,26 @@ npm start
 1. Click **Settings**.
 2. Under **Engine**, choose **Cloud API** or **Local model**. Only the section for the engine you picked is shown.
 3. For **Cloud API**:
-   - Pick a **Provider**.
-   - Paste that provider's API key and click **Save**. The key is encrypted with the OS keychain and stored per provider.
-   - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
-   - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
+    - Pick a **Provider**.
+    - Paste that provider's API key and click **Save**. The key is encrypted with the OS keychain and stored per provider.
+    - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
+    - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
 4. For **Local model**, choose the model `.gguf`, the `mmproj` `.gguf`, and (optionally) the `llama-server` binary. If the binary lives in Homebrew's standard location, it is auto-detected.
 5. Click **Done**, press Esc, or click anywhere outside the dialog to close it. Settings persist to your Electron `userData` directory.
 
 ## Supported providers
 
-| Provider | API family |
-| --- | --- |
-| Anthropic | Messages API |
-| Google Gemini | `generateContent` |
-| OpenAI | OpenAI chat completions |
-| xAI | OpenAI chat completions |
-| DeepSeek | OpenAI chat completions |
-| OpenRouter | OpenAI chat completions |
-| Groq | OpenAI chat completions |
-| Mistral | OpenAI chat completions |
-| Together AI | OpenAI chat completions |
+| Provider      | API family              |
+| ------------- | ----------------------- |
+| Anthropic     | Messages API            |
+| Google Gemini | `generateContent`       |
+| OpenAI        | OpenAI chat completions |
+| xAI           | OpenAI chat completions |
+| DeepSeek      | OpenAI chat completions |
+| OpenRouter    | OpenAI chat completions |
+| Groq          | OpenAI chat completions |
+| Mistral       | OpenAI chat completions |
+| Together AI   | OpenAI chat completions |
 
 Most providers expose an OpenAI-compatible endpoint, so adding one is a single entry in `renderer/providers.js`.
 
@@ -122,23 +122,23 @@ Renames are confirmed before anything happens and never overwrite an existing fi
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| `Cmd+,` / `Ctrl+,` | Open Settings |
-| `Cmd+O` / `Ctrl+O` | Add files |
-| `Cmd+Enter` / `Ctrl+Enter` | Generate names |
-| `Cmd+Option+Z` / `Ctrl+Alt+Z` | Undo the last rename, when focus is not in a text field |
-| `Esc` | Cancel a running batch, when focus is not in a text field |
+| Shortcut                      | Action                                                    |
+| ----------------------------- | --------------------------------------------------------- |
+| `Cmd+,` / `Ctrl+,`            | Open Settings                                             |
+| `Cmd+O` / `Ctrl+O`            | Add files                                                 |
+| `Cmd+Enter` / `Ctrl+Enter`    | Generate names                                            |
+| `Cmd+Option+Z` / `Ctrl+Alt+Z` | Undo the last rename, when focus is not in a text field   |
+| `Esc`                         | Cancel a running batch, when focus is not in a text field |
 
 ## Naming template reference
 
-| Placeholder | Fills with |
-| --- | --- |
-| `{title}` | A 2–5 word description of what the file is |
-| `{entity}` | The vendor, company, or person tied to the document, if any |
-| `{date}` | The document's date, formatted per the date-format setting |
-| `{type}` | The document type, e.g. `invoice`, `receipt`, `screenshot`, `photo` |
-| `{whatever}` | Any custom field you defined in Settings |
+| Placeholder  | Fills with                                                          |
+| ------------ | ------------------------------------------------------------------- |
+| `{title}`    | A 2–5 word description of what the file is                          |
+| `{entity}`   | The vendor, company, or person tied to the document, if any         |
+| `{date}`     | The document's date, formatted per the date-format setting          |
+| `{type}`     | The document type, e.g. `invoice`, `receipt`, `screenshot`, `photo` |
+| `{whatever}` | Any custom field you defined in Settings                            |
 
 Values are lowercased, accent-stripped, and separated by the chosen separator. Empty placeholders collapse cleanly, so a missing date never leaves a stray `--` in the name, and an unknown placeholder fills empty rather than leaking its own name into the filename.
 

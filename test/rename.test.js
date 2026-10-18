@@ -56,12 +56,18 @@ test('planRenames: matches an existing directory whose key case differs from the
 
 test('planRenames: disambiguates two rows that resolve to the same name', () => {
     const plan = planRenames([item(1, '/docs/a.pdf', 'invoice'), item(2, '/docs/b.pdf', 'invoice')], {});
-    assert.deepEqual(plan.map((p) => p.target), ['invoice.pdf', 'invoice-2.pdf']);
+    assert.deepEqual(
+        plan.map((p) => p.target),
+        ['invoice.pdf', 'invoice-2.pdf']
+    );
 });
 
 test('planRenames: the same desired name in different folders does not collide', () => {
     const plan = planRenames([item(1, '/a/x.pdf', 'invoice'), item(2, '/b/y.pdf', 'invoice')], {});
-    assert.deepEqual(plan.map((p) => p.target), ['invoice.pdf', 'invoice.pdf']);
+    assert.deepEqual(
+        plan.map((p) => p.target),
+        ['invoice.pdf', 'invoice.pdf']
+    );
 });
 
 test('planRenames: collision detection is case-insensitive', () => {
@@ -106,10 +112,13 @@ test('planUndo: reverses a single rename', () => {
 test('planUndo: unwinds multiple renames in reverse order', () => {
     const entries = [entry(1, '/d/a.pdf', '/d/b.pdf'), entry(2, '/d/c.pdf', '/d/d.pdf')];
     const plan = planUndo(entries, { '/d': ['b.pdf', 'd.pdf'] });
-    assert.deepEqual(plan.map((p) => [p.from, p.to]), [
-        ['/d/d.pdf', '/d/c.pdf'],
-        ['/d/b.pdf', '/d/a.pdf']
-    ]);
+    assert.deepEqual(
+        plan.map((p) => [p.from, p.to]),
+        [
+            ['/d/d.pdf', '/d/c.pdf'],
+            ['/d/b.pdf', '/d/a.pdf']
+        ]
+    );
 });
 
 test('planUndo: reports a renamed file that is no longer there', () => {

@@ -13,42 +13,78 @@
 
     const LIST = [
         {
-            id: 'anthropic', name: 'Anthropic', kind: 'anthropic', base: 'https://api.anthropic.com',
-            keyHint: 'sk-ant-...', docs: 'https://console.anthropic.com/settings/keys'
+            id: 'anthropic',
+            name: 'Anthropic',
+            kind: 'anthropic',
+            base: 'https://api.anthropic.com',
+            keyHint: 'sk-ant-...',
+            docs: 'https://console.anthropic.com/settings/keys'
         },
         {
-            id: 'openai', name: 'OpenAI', kind: 'openai', base: 'https://api.openai.com/v1',
-            keyHint: 'sk-...', docs: 'https://platform.openai.com/api-keys'
+            id: 'openai',
+            name: 'OpenAI',
+            kind: 'openai',
+            base: 'https://api.openai.com/v1',
+            keyHint: 'sk-...',
+            docs: 'https://platform.openai.com/api-keys'
         },
         {
-            id: 'google', name: 'Google Gemini', kind: 'google', base: 'https://generativelanguage.googleapis.com/v1beta',
-            keyHint: 'AIza...', docs: 'https://aistudio.google.com/apikey'
+            id: 'google',
+            name: 'Google Gemini',
+            kind: 'google',
+            base: 'https://generativelanguage.googleapis.com/v1beta',
+            keyHint: 'AIza...',
+            docs: 'https://aistudio.google.com/apikey'
         },
         {
-            id: 'xai', name: 'xAI', kind: 'openai', base: 'https://api.x.ai/v1',
-            keyHint: 'xai-...', docs: 'https://console.x.ai'
+            id: 'xai',
+            name: 'xAI',
+            kind: 'openai',
+            base: 'https://api.x.ai/v1',
+            keyHint: 'xai-...',
+            docs: 'https://console.x.ai'
         },
         {
-            id: 'deepseek', name: 'DeepSeek', kind: 'openai', base: 'https://api.deepseek.com/v1',
-            keyHint: 'sk-...', docs: 'https://platform.deepseek.com/api_keys'
+            id: 'deepseek',
+            name: 'DeepSeek',
+            kind: 'openai',
+            base: 'https://api.deepseek.com/v1',
+            keyHint: 'sk-...',
+            docs: 'https://platform.deepseek.com/api_keys'
         },
         {
-            id: 'openrouter', name: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1',
-            keyHint: 'sk-or-...', docs: 'https://openrouter.ai/keys',
+            id: 'openrouter',
+            name: 'OpenRouter',
+            kind: 'openai',
+            base: 'https://openrouter.ai/api/v1',
+            keyHint: 'sk-or-...',
+            docs: 'https://openrouter.ai/keys',
             // The model catalogue is public, so listing models proves nothing about the key.
             authCheck: '/key'
         },
         {
-            id: 'groq', name: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1',
-            keyHint: 'gsk_...', docs: 'https://console.groq.com/keys'
+            id: 'groq',
+            name: 'Groq',
+            kind: 'openai',
+            base: 'https://api.groq.com/openai/v1',
+            keyHint: 'gsk_...',
+            docs: 'https://console.groq.com/keys'
         },
         {
-            id: 'mistral', name: 'Mistral', kind: 'openai', base: 'https://api.mistral.ai/v1',
-            keyHint: 'your API key', docs: 'https://console.mistral.ai/api-keys'
+            id: 'mistral',
+            name: 'Mistral',
+            kind: 'openai',
+            base: 'https://api.mistral.ai/v1',
+            keyHint: 'your API key',
+            docs: 'https://console.mistral.ai/api-keys'
         },
         {
-            id: 'together', name: 'Together AI', kind: 'openai', base: 'https://api.together.xyz/v1',
-            keyHint: 'your API key', docs: 'https://api.together.ai/settings/api-keys'
+            id: 'together',
+            name: 'Together AI',
+            kind: 'openai',
+            base: 'https://api.together.xyz/v1',
+            keyHint: 'your API key',
+            docs: 'https://api.together.ai/settings/api-keys'
         }
     ];
 
@@ -87,9 +123,7 @@
         } else {
             rows = (j.data || []).map((m) => ({ id: m.id, label: m.name || m.id }));
         }
-        return rows
-            .filter((m) => m.id)
-            .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+        return rows.filter((m) => m.id).sort((a, b) => String(a.label).localeCompare(String(b.label)));
     }
 
     // Gemini's responseSchema is an OpenAPI subset and rejects additionalProperties.
@@ -108,14 +142,18 @@
     // curated family patterns; unknown models return null so the app shows tokens only.
     function estimateCost(pricing, providerId, model, inputTokens, outputTokens) {
         const data = pricing || {};
-        const id = String(model || '').toLowerCase().replace(/^models\//, '');
+        const id = String(model || '')
+            .toLowerCase()
+            .replace(/^models\//, '');
         const money = (row) => (Number(inputTokens || 0) * Number(row.input) + Number(outputTokens || 0) * Number(row.output)) / 1e6;
         const exact = data.models?.[providerId]?.[id];
         if (exact) return money(exact);
         for (const row of (data.families || {})[providerId] || []) {
             try {
                 if (new RegExp(row.match).test(id)) return money(row);
-            } catch { /* invalid patterns are ignored at runtime */ }
+            } catch {
+                /* invalid patterns are ignored at runtime */
+            }
         }
         return null;
     }
@@ -129,7 +167,10 @@
         if (!s.apiKeys || typeof s.apiKeys !== 'object') s.apiKeys = {};
         if (s.apiKeyEnc && !s.apiKeys.anthropic) s.apiKeys.anthropic = s.apiKeyEnc;
         if (s.model && !s.models.anthropic) s.models.anthropic = s.model;
-        if (s.provider === 'local') { s.engine = 'local'; s.provider = 'anthropic'; }
+        if (s.provider === 'local') {
+            s.engine = 'local';
+            s.provider = 'anthropic';
+        }
         if (!s.engine) s.engine = 'cloud';
         delete s.apiKeyEnc;
         delete s.model;
