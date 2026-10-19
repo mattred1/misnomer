@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-17T19:37:09.252Z",
+  "generatedAt": "2026-10-19T11:32:47.754Z",
   "source": {
     "name": "LiteLLM",
     "url": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
@@ -1263,6 +1263,10 @@
         "output": 3.96
       },
       "deepseek-ai/deepseek-v4.1-flash": {
+        "input": 0.3,
+        "output": 1.2
+      },
+      "deepseek-ai/deepseek-v4.1-flash-1017": {
         "input": 0.3,
         "output": 1.2
       },
