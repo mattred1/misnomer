@@ -1,11 +1,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { LIST, providerById, headersFor, modelUrl, authRequest, parseModels, googleSchema, migrateSettings, estimateCost } = require('../renderer/providers.js');
+const {
+    LIST,
+    providerById,
+    headersFor,
+    modelUrl,
+    authRequest,
+    parseModels,
+    googleSchema,
+    migrateSettings,
+    estimateCost
+} = require('../renderer/providers.js');
 const pricing = require('../pricing/pricing.json');
 
 const BASE = () => ({
-    engine: 'cloud', provider: 'anthropic', models: {}, apiKeys: {},
-    localModel: '', localMmproj: '', llamaServer: '', presets: [], activePreset: 'default'
+    engine: 'cloud',
+    provider: 'anthropic',
+    models: {},
+    apiKeys: {},
+    localModel: '',
+    localMmproj: '',
+    llamaServer: '',
+    presets: [],
+    activePreset: 'default'
 });
 
 test('provider registry: ids are unique and every entry is complete', () => {
@@ -52,7 +69,10 @@ test('authRequest: only exists for providers whose catalogue is public', () => {
 
 test('parseModels: OpenAI returns data[].id', () => {
     const out = parseModels(providerById('openai'), { data: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] });
-    assert.deepEqual(out.map((m) => m.id), ['gpt-4o', 'gpt-4o-mini']);
+    assert.deepEqual(
+        out.map((m) => m.id),
+        ['gpt-4o', 'gpt-4o-mini']
+    );
 });
 
 test('parseModels: Anthropic prefers display_name', () => {
@@ -68,7 +88,10 @@ test('parseModels: Google keeps full model names and filters to generateContent'
             { name: 'models/gemini-pro', displayName: 'Gemini Pro', supportedGenerationMethods: ['generateContent', 'countTokens'] }
         ]
     });
-    assert.deepEqual(out.map((m) => m.id), ['models/gemini-flash', 'models/gemini-pro']);
+    assert.deepEqual(
+        out.map((m) => m.id),
+        ['models/gemini-flash', 'models/gemini-pro']
+    );
 });
 
 test('parseModels: tolerates a malformed or empty payload', () => {
@@ -79,7 +102,10 @@ test('parseModels: tolerates a malformed or empty payload', () => {
 
 test('parseModels: sorts by label for display', () => {
     const out = parseModels(providerById('openai'), { data: [{ id: 'z' }, { id: 'a' }] });
-    assert.deepEqual(out.map((m) => m.id), ['a', 'z']);
+    assert.deepEqual(
+        out.map((m) => m.id),
+        ['a', 'z']
+    );
 });
 
 test('googleSchema: strips additionalProperties at every depth', () => {

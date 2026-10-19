@@ -13,8 +13,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Batch processing** — drop a folder's worth of files at once, watch per-file status with a batch progress bar, and fix any name inline before saving. The action bar and table header stay pinned while long batches scroll.
 - **Light and dark themes** — choose **Auto** (follow the system setting, the default), **Light**, or **Dark** in Settings; the choice is saved with the rest of the app settings.
 - **Two engines**
-  - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
-  - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
+    - **Cloud API** — Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, OpenRouter, Groq, Mistral, or Together AI. Each provider keeps its own encrypted key and model choice.
+    - **Local model** — runs on your Mac through `llama-server` (llama.cpp) with a vision GGUF model plus a matching `mmproj` projector. Nothing leaves the machine.
 - **Live model list** — the model dropdown is populated from the selected provider's own catalogue, so only models your key can actually reach are offered.
 - **Connection check** — Settings shows a green, amber, or red dot for the selected provider, with the reason when a key fails.
 - **Structured output** — requests a JSON schema where the provider supports it, and falls back to plain JSON parsing where it does not.
@@ -41,15 +41,15 @@ Everything runs locally except the files you send to a cloud model. Your API key
 
 ## Supported file types
 
-| Type | Extensions | How it is read |
-| --- | --- | --- |
-| Documents | `.pdf` | Sent as a native document to Anthropic and Gemini. Providers that speak OpenAI chat completions cannot take a PDF, so the first 2 pages are rendered to JPEG images instead. |
-| Images (native) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` | Sent to the model directly |
-| Images (canvas) | `.bmp`, `.ico`, `.svg`, `.avif` | Chromium can decode these but the model APIs won't accept them, so they are re-encoded to JPEG in the app. The file on disk keeps its original format. |
-| Images (sips) | `.tif`, `.tiff`, `.heic`, `.heif` | Chromium cannot decode these at all, so macOS `sips` converts them to JPEG in the main process. macOS only. |
-| Text | `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.log`, `.yml`, `.yaml`, `.srt`, `.vtt` | Read as UTF-8 and sent in the prompt |
-| Markup | `.html`, `.htm`, `.xml`, `.rtf` | Tagged content is stripped down to readable text before being sent |
-| Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text |
+| Type            | Extensions                                                                                   | How it is read                                                                                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documents       | `.pdf`                                                                                       | Sent as a native document to Anthropic and Gemini. Providers that speak OpenAI chat completions cannot take a PDF, so the first 2 pages are rendered to JPEG images instead. |
+| Images (native) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`                                                     | Sent to the model directly                                                                                                                                                   |
+| Images (canvas) | `.bmp`, `.ico`, `.svg`, `.avif`                                                              | Chromium can decode these but the model APIs won't accept them, so they are re-encoded to JPEG in the app. The file on disk keeps its original format.                       |
+| Images (sips)   | `.tif`, `.tiff`, `.heic`, `.heif`                                                            | Chromium cannot decode these at all, so macOS `sips` converts them to JPEG in the main process. macOS only.                                                                  |
+| Text            | `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.log`, `.yml`, `.yaml`, `.srt`, `.vtt` | Read as UTF-8 and sent in the prompt                                                                                                                                         |
+| Markup          | `.html`, `.htm`, `.xml`, `.rtf`                                                              | Tagged content is stripped down to readable text before being sent                                                                                                           |
+| Office / ebooks | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub`                                                   | These are ZIP containers; the relevant XML parts are unzipped with `jszip` and reduced to text                                                                               |
 
 Text is capped at 12,000 characters per file before it goes into a prompt. The file picker is limited to these formats, and the drop zone lists anything else as skipped.
 
@@ -76,26 +76,26 @@ npm start
 1. Click **Settings**.
 2. Under **Engine**, choose **Cloud API** or **Local model**. Only the section for the engine you picked is shown.
 3. For **Cloud API**:
-   - Pick a **Provider**.
-   - Paste that provider's API key and click **Save**. The key is encrypted with the OS keychain and stored per provider.
-   - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
-   - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
+    - Pick a **Provider**.
+    - Paste that provider's API key and click **Save**. The key is encrypted with the OS keychain and stored per provider.
+    - Watch the status dot: amber while it checks, green when the key works, red with the provider's message when it does not.
+    - Choose a **Model** from the dropdown. The list is fetched from the provider, so it only shows models your key can reach. **Refresh** re-fetches it.
 4. For **Local model**, choose the model `.gguf`, the `mmproj` `.gguf`, and (optionally) the `llama-server` binary. If the binary lives in Homebrew's standard location, it is auto-detected.
 5. Click **Done**, press Esc, or click anywhere outside the dialog to close it. Settings persist to your Electron `userData` directory.
 
 ## Supported providers
 
-| Provider | API family |
-| --- | --- |
-| Anthropic | Messages API |
-| Google Gemini | `generateContent` |
-| OpenAI | OpenAI chat completions |
-| xAI | OpenAI chat completions |
-| DeepSeek | OpenAI chat completions |
-| OpenRouter | OpenAI chat completions |
-| Groq | OpenAI chat completions |
-| Mistral | OpenAI chat completions |
-| Together AI | OpenAI chat completions |
+| Provider      | API family              |
+| ------------- | ----------------------- |
+| Anthropic     | Messages API            |
+| Google Gemini | `generateContent`       |
+| OpenAI        | OpenAI chat completions |
+| xAI           | OpenAI chat completions |
+| DeepSeek      | OpenAI chat completions |
+| OpenRouter    | OpenAI chat completions |
+| Groq          | OpenAI chat completions |
+| Mistral       | OpenAI chat completions |
+| Together AI   | OpenAI chat completions |
 
 Most providers expose an OpenAI-compatible endpoint, so adding one is a single entry in `renderer/providers.js`.
 
@@ -122,23 +122,23 @@ Renames are confirmed before anything happens and never overwrite an existing fi
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| `Cmd+,` / `Ctrl+,` | Open Settings |
-| `Cmd+O` / `Ctrl+O` | Add files |
-| `Cmd+Enter` / `Ctrl+Enter` | Generate names |
-| `Cmd+Option+Z` / `Ctrl+Alt+Z` | Undo the last rename, when focus is not in a text field |
-| `Esc` | Cancel a running batch, when focus is not in a text field |
+| Shortcut                      | Action                                                    |
+| ----------------------------- | --------------------------------------------------------- |
+| `Cmd+,` / `Ctrl+,`            | Open Settings                                             |
+| `Cmd+O` / `Ctrl+O`            | Add files                                                 |
+| `Cmd+Enter` / `Ctrl+Enter`    | Generate names                                            |
+| `Cmd+Option+Z` / `Ctrl+Alt+Z` | Undo the last rename, when focus is not in a text field   |
+| `Esc`                         | Cancel a running batch, when focus is not in a text field |
 
 ## Naming template reference
 
-| Placeholder | Fills with |
-| --- | --- |
-| `{title}` | A 2–5 word description of what the file is |
-| `{entity}` | The vendor, company, or person tied to the document, if any |
-| `{date}` | The document's date, formatted per the date-format setting |
-| `{type}` | The document type, e.g. `invoice`, `receipt`, `screenshot`, `photo` |
-| `{whatever}` | Any custom field you defined in Settings |
+| Placeholder  | Fills with                                                          |
+| ------------ | ------------------------------------------------------------------- |
+| `{title}`    | A 2–5 word description of what the file is                          |
+| `{entity}`   | The vendor, company, or person tied to the document, if any         |
+| `{date}`     | The document's date, formatted per the date-format setting          |
+| `{type}`     | The document type, e.g. `invoice`, `receipt`, `screenshot`, `photo` |
+| `{whatever}` | Any custom field you defined in Settings                            |
 
 Values are lowercased, accent-stripped, and separated by the chosen separator. Empty placeholders collapse cleanly, so a missing date never leaves a stray `--` in the name, and an unknown placeholder fills empty rather than leaking its own name into the filename.
 
@@ -169,7 +169,37 @@ Filesystem work in the main process — recursive folder scans, file reads, dire
 npm run dist
 ```
 
-This runs `electron-builder --mac` and produces a DMG in `dist/`. The build is **unsigned**, so Gatekeeper will warn first-time users. See the roadmap.
+This runs `electron-builder --mac` and produces a DMG in `dist/`. Local builds are unsigned unless signing credentials are present, so Gatekeeper may warn first-time users.
+
+### Signed and notarized builds
+
+The build is signing-ready: Hardened Runtime is enabled, and `npm run dist:signed` turns on electron-builder's notarization step. Signed releases require an Apple Developer Program membership and a **Developer ID Application** certificate.
+
+Add these secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret             | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| `CSC_LINK`         | Base64-encoded `.p12` certificate, including its private key |
+| `CSC_KEY_PASSWORD` | Password for the `.p12`                                      |
+| `APPLE_API_KEY`    | Base64-encoded App Store Connect `.p8` key                   |
+| `APPLE_API_KEY_ID` | App Store Connect key ID                                     |
+| `APPLE_API_ISSUER` | App Store Connect issuer ID                                  |
+| `APPLE_TEAM_ID`    | 10-character Apple Developer team ID                         |
+
+Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds an unsigned DMG when signing credentials are absent and a signed, notarized DMG when they are present, then verifies the signature and stapling ticket before uploading.
+
+To publish a release:
+
+1. Replace `com.example.misnomer` in `package.json` with a stable reverse-DNS bundle ID.
+2. Commit the change and run `npm version patch` (or `minor` / `major`).
+3. Push the commit and tag with `git push --follow-tags`.
+4. The `CI` workflow tests the tag, builds on macOS, signs and notarizes when secrets are configured, and attaches the DMG to the GitHub release.
+
+For a local signed build, export the same environment variables and run:
+
+```bash
+npm run dist:signed
+```
 
 ## Project layout
 
@@ -191,6 +221,7 @@ scripts/
   update-pricing.js    Refreshes pricing.json from the LiteLLM dataset
 .github/workflows/
   pricing.yml          Weekly pricing refresh that opens a PR
+  ci.yml               Lint, format, and tests on PRs; macOS releases on tags
 test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
@@ -248,13 +279,13 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
 - [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
 - [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
-- [ ] **Keyboard shortcuts**
+- [x] **Keyboard shortcuts** — Cmd/Ctrl shortcuts for settings, adding files, generating names, undoing a rename, and cancelling a batch, documented in the README
 - [ ] **Export/import presets and settings** to JSON for sharing and version control
 - [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
-- [ ] **Code signing + notarization** for the macOS DMG (unsigned builds trigger Gatekeeper warnings)
+- [ ] **Code signing + notarization** for the macOS DMG — the CI build and electron-builder configuration are ready; add Apple Developer secrets to enable notarized releases
 - [ ] **Windows and Linux build targets**
 - [ ] **Auto-update** via `electron-updater`
-- [ ] **GitHub Actions CI** — run tests on PR and publish signed releases on tag
+- [x] **GitHub Actions CI** — lint, format check, and tests on PRs; macOS builds on version tags, with signed releases when Apple secrets are configured
 - [ ] **Internationalization** of the prompt and UI
 - [ ] **Headless CLI / watch-folder mode** for scripting and scheduled runs
 - [ ] **Configurable concurrency** — the worker count is hardcoded (1 local, 2 cloud); expose local/cloud concurrency in Settings and adapt to provider rate limits

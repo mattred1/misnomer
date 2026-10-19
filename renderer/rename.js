@@ -30,7 +30,7 @@
         for (const dir of Object.keys(existing || {})) {
             const key = lower(dir);
             if (!out[key]) out[key] = [];
-            out[key].push(...((existing[dir]) || []));
+            out[key].push(...(existing[dir] || []));
         }
         return out;
     }
@@ -42,7 +42,9 @@
     // `changed` is false when the file already has the desired name, so callers can skip it.
     function planRenames(items, existing) {
         const onDisk = indexExisting(existing);
-        const disk = {}, claimed = {}, out = [];
+        const disk = {},
+            claimed = {},
+            out = [];
         for (const it of items || []) {
             const dir = dirOf(it.from);
             const key = lower(dir);
@@ -63,7 +65,8 @@
                 return disk[key].has(l) && l !== lower(original);
             };
 
-            let n = 1, target = candidate(n);
+            let n = 1,
+                target = candidate(n);
             while (!noop && taken(target)) target = candidate(++n);
 
             claimed[key].add(lower(target));
@@ -77,7 +80,9 @@
     // Returns entries with `ok` and, when not ok, a `reason` of 'missing' or 'occupied'.
     function planUndo(entries, existing) {
         const onDisk = indexExisting(existing);
-        const disk = {}, claimed = {}, out = [];
+        const disk = {},
+            claimed = {},
+            out = [];
         for (const e of [...(entries || [])].reverse()) {
             const rev = { id: e.id, from: e.to, to: e.from };
             const key = lower(dirOf(rev.to));
@@ -90,7 +95,8 @@
             // Reverting is only safe if the renamed file is still there and the
             // original name has not been taken by something else.
             if (!exists) out.push({ ...rev, ok: false, reason: 'missing' });
-            else if (toName !== fromName && (disk[key].has(toName) || claimed[key].has(toName))) out.push({ ...rev, ok: false, reason: 'occupied' });
+            else if (toName !== fromName && (disk[key].has(toName) || claimed[key].has(toName)))
+                out.push({ ...rev, ok: false, reason: 'occupied' });
             else {
                 claimed[key].add(toName);
                 out.push({ ...rev, ok: true });

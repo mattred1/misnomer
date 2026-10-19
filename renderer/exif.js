@@ -17,7 +17,9 @@
     function normalize(value) {
         const m = /^(\d{4})[:\-/](\d{2})[:\-/](\d{2})/.exec(String(value == null ? '' : value).trim());
         if (!m) return '';
-        const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+        const year = Number(m[1]),
+            month = Number(m[2]),
+            day = Number(m[3]);
         if (year < 1826 || year > 2200 || month < 1 || month > 12 || day < 1 || day > 31) return '';
         return m[1] + '-' + m[2] + '-' + m[3];
     }
@@ -26,7 +28,9 @@
     function formatDate(iso, format) {
         const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso == null ? '' : iso));
         if (!m) return '';
-        const y = m[1], mo = m[2], d = m[3];
+        const y = m[1],
+            mo = m[2],
+            d = m[3];
         if (format === 'mdy') return mo + '-' + d + '-' + y;
         if (format === 'dmy') return d + '-' + mo + '-' + y;
         if (format === 'compact') return y + mo + d;
@@ -35,12 +39,19 @@
         return y + '-' + mo + '-' + d;
     }
 
-    const isTiff = (buf, p) => p + 8 <= buf.length
-        && ((buf[p] === 0x49 && buf[p + 1] === 0x49 && buf[p + 2] === 0x2a && buf[p + 3] === 0x00)
-            || (buf[p] === 0x4d && buf[p + 1] === 0x4d && buf[p + 2] === 0x00 && buf[p + 3] === 0x2a));
+    const isTiff = (buf, p) =>
+        p + 8 <= buf.length &&
+        ((buf[p] === 0x49 && buf[p + 1] === 0x49 && buf[p + 2] === 0x2a && buf[p + 3] === 0x00) ||
+            (buf[p] === 0x4d && buf[p + 1] === 0x4d && buf[p + 2] === 0x00 && buf[p + 3] === 0x2a));
 
-    const hasMarker = (buf, p) => p + 6 <= buf.length && buf[p] === 0x45 && buf[p + 1] === 0x78
-        && buf[p + 2] === 0x69 && buf[p + 3] === 0x66 && buf[p + 4] === 0x00 && buf[p + 5] === 0x00;
+    const hasMarker = (buf, p) =>
+        p + 6 <= buf.length &&
+        buf[p] === 0x45 &&
+        buf[p + 1] === 0x78 &&
+        buf[p + 2] === 0x69 &&
+        buf[p + 3] === 0x66 &&
+        buf[p + 4] === 0x00 &&
+        buf[p + 5] === 0x00;
 
     // Returns the offset of the TIFF header, or -1 when there is no EXIF block.
     function tiffStart(buf) {
@@ -48,10 +59,19 @@
         if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8) {
             let i = 2;
             while (i + 4 <= buf.length) {
-                if (buf[i] !== 0xff) { i++; continue; }
+                if (buf[i] !== 0xff) {
+                    i++;
+                    continue;
+                }
                 const marker = buf[i + 1];
-                if (marker === 0xff) { i++; continue; }
-                if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+                if (marker === 0xff) {
+                    i++;
+                    continue;
+                }
+                if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+                    i += 2;
+                    continue;
+                }
                 if (marker === 0xda || marker === 0xd9) break; // image data starts here
                 const len = (buf[i + 2] << 8) | buf[i + 3];
                 if (len < 2) break;
@@ -79,8 +99,11 @@
         }
 
         // WebP EXIF chunk.
-        if (buf.length > 12 && String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) === 'RIFF'
-            && String.fromCharCode(buf[8], buf[9], buf[10], buf[11]) === 'WEBP') {
+        if (
+            buf.length > 12 &&
+            String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) === 'RIFF' &&
+            String.fromCharCode(buf[8], buf[9], buf[10], buf[11]) === 'WEBP'
+        ) {
             let i = 12;
             while (i + 8 <= buf.length) {
                 const type = String.fromCharCode(buf[i], buf[i + 1], buf[i + 2], buf[i + 3]);
@@ -103,9 +126,10 @@
     function readDates(buf, start) {
         const le = buf[start] === 0x49;
         const u16 = (p) => (le ? buf[p] | (buf[p + 1] << 8) : (buf[p] << 8) | buf[p + 1]);
-        const u32 = (p) => (le
-            ? (buf[p] | (buf[p + 1] << 8) | (buf[p + 2] << 16) | (buf[p + 3] << 24)) >>> 0
-            : ((buf[p] << 24) | (buf[p + 1] << 16) | (buf[p + 2] << 8) | buf[p + 3]) >>> 0);
+        const u32 = (p) =>
+            le
+                ? (buf[p] | (buf[p + 1] << 8) | (buf[p + 2] << 16) | (buf[p + 3] << 24)) >>> 0
+                : ((buf[p] << 24) | (buf[p + 1] << 16) | (buf[p + 2] << 8) | buf[p + 3]) >>> 0;
 
         const ifd0 = start + u32(start + 4);
         const read = (base) => {
@@ -116,7 +140,9 @@
             for (let i = 0; i < count; i++) {
                 const entry = base + 2 + i * 12;
                 if (entry + 12 > buf.length) break;
-                const tag = u16(entry), type = u16(entry + 2), n = u32(entry + 4);
+                const tag = u16(entry),
+                    type = u16(entry + 2),
+                    n = u32(entry + 4);
                 if (tag === TAG_EXIF_IFD && type === 4) out.exifOffset = u32(entry + 8);
                 // ASCII values of 4 bytes or fewer are stored inline in the entry itself.
                 if (type !== 2 || n < 5 || n > 64) continue;
