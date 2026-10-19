@@ -6,6 +6,7 @@
 
 const fs = require('fs/promises');
 const path = require('path');
+const prettier = require('prettier');
 const { normalizeModels, validatePricing } = require('./pricing-lib.js');
 
 const SOURCE_URL =
@@ -38,7 +39,15 @@ async function main() {
     next.generatedAt = new Date().toISOString();
     const errors = validatePricing(next);
     if (errors.length) throw new Error('Invalid pricing data:\n' + errors.join('\n'));
-    await fs.writeFile(FILE, JSON.stringify(next, null, 2) + '\n');
+    // Format with the repository's Prettier config so the commit this workflow
+    // opens passes the `prettier --check` gate in CI.
+    const prettierConfig = (await prettier.resolveConfig(FILE)) || {};
+    const formatted = await prettier.format(JSON.stringify(next, null, 2) + '\n', {
+        ...prettierConfig,
+        parser: 'json',
+        filepath: FILE
+    });
+    await fs.writeFile(FILE, formatted);
     console.log('Updated ' + count + ' model prices.');
 }
 

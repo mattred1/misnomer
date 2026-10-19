@@ -6,7 +6,7 @@ name: Update pricing
 # Notes:
 # - Scheduled workflows are disabled by GitHub after 60 days without repo activity.
 # - PRs opened with GITHUB_TOKEN do not trigger other workflows; this job runs
-#   lint and tests itself before opening the PR.
+#   lint, formatting, and tests itself before opening the PR.
 
 on:
     schedule:
@@ -36,6 +36,7 @@ jobs:
             - run: npm ci
             - run: npm run pricing:update
             - run: npm run lint
+            - run: npx prettier --check .
             - run: npm test
 
             - uses: peter-evans/create-pull-request@v6
