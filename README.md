@@ -58,7 +58,7 @@ Photos with no printed or visible date fall back to the capture date stored in E
 ## Requirements
 
 - macOS (packaging is currently configured for macOS `.dmg` only)
-- Node.js 18+ and npm (for development)
+- Node.js 24+ and npm (for development; matches `.nvmrc` and CI)
 - **For the cloud engine:** an API key for whichever provider you choose
 - **For the local engine:** `brew install llama.cpp`, then a vision `.gguf` model and its matching `mmproj` `.gguf`
 
