@@ -25,6 +25,11 @@ module.exports = [
                 ...globals.browser,
                 // Exposed by preload.js through contextBridge.
                 api: 'readonly',
+                // Classic renderer modules loaded before app.js.
+                Thumbs: 'readonly',
+                Table: 'readonly',
+                Preview: 'readonly',
+                Settings: 'readonly',
                 // pdfjs and jszip are loaded as classic scripts from node_modules.
                 pdfjsLib: 'readonly',
                 JSZip: 'readonly'

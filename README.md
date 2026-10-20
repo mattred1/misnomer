@@ -219,7 +219,11 @@ renderer/
   rename.js            Path handling, rename planning, and undo replay
   zip.js               Pure archive entry naming and duplicate resolution
   zip-archive.js       Streaming ZIP writer used by the main process
-  app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews, usage totals
+  thumbs.js            Lazy thumbnails and full-size image/PDF previews
+  table.js             Results table rows, statuses, collision hints, usage totals
+  preview.js           Template chips, token preview, and custom fields
+  settings.js          Settings dialog, theme/engine, provider keys/models, presets
+  app.js               Orchestration: file intake, analysis, renaming, progress, dialogs, shortcuts
   updates.js           Auto-update banner and Settings status
   export.js            ZIP export UI, progress, and cancellation
 pricing/
@@ -251,7 +255,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 ### Tier 1 — Foundation
 
 - [x] **Extract naming logic into a testable module** — `renderer/naming.js`, loaded as a UMD script so Node can also `require` it
-- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (98 tests, zero new runtime dependencies)
+- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (110 tests, zero new runtime dependencies)
 - [x] **Add ESLint + Prettier** with `lint` and `format` npm scripts
 - [x] **Add a LICENSE file** (MIT)
 - [ ] **Add a screenshot/GIF** of the UI to this README — needs a capture from a running instance
@@ -286,7 +290,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Token and cost estimates** — input/output tokens for every engine, plus estimated USD cost for models in the built-in price table; local runs show no API cost
 - [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
 - [x] **ZIP export progress** — archives stream from disk in the main process, with live progress, screen-reader announcements, and cancellation
-- [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
+- [x] **Split `renderer/app.js`** into focused modules for the table, thumbnails, template preview, and settings
 - [x] **Keyboard shortcuts** — Cmd/Ctrl shortcuts for settings, adding files, generating names, undoing a rename, and cancelling a batch, documented in the README
 - [ ] **Export/import presets and settings** to JSON for sharing and version control
 - [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
