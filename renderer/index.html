@@ -620,6 +620,8 @@
                 border: 1px solid var(--bd);
                 border-radius: 12px;
                 width: min(640px, 92vw);
+                max-height: 86vh;
+                overflow-y: auto;
                 padding: 18px;
             }
 
@@ -810,6 +812,12 @@
                 background: var(--warn);
             }
 
+            .updatebar .progress,
+            #updatesec .progress {
+                width: 100%;
+                margin-top: 10px;
+            }
+
             .statusline {
                 margin-top: -8px;
             }
@@ -994,6 +1002,15 @@
                 <h1>Misnomer</h1>
                 <button id="gear" aria-keyshortcuts="Meta+, Control+,">Settings</button>
             </header>
+            <div class="card updatebar" id="updatebanner" hidden role="status" aria-live="polite">
+                <div><b id="updatetitle">Update ready</b> <span class="mut" id="updatemsg"></span></div>
+                <div class="progress" id="updatebannerprog">
+                    <div id="updatebannerfill"></div>
+                </div>
+                <div class="bar" style="margin-top: 8px">
+                    <button class="pri" id="updateinstall" hidden>Restart to update</button><button id="updatelater" hidden>Later</button>
+                </div>
+            </div>
             <div class="card">
                 <label for="tpl">Name template for this batch</label>
                 <input type="text" id="tpl" value="{title}" spellcheck="false" />
@@ -1172,6 +1189,17 @@
                     </ol>
                 </div>
             </fieldset>
+            <fieldset id="updatesec">
+                <legend>Updates</legend>
+                <div class="row" style="justify-content: space-between">
+                    <span>Version <b id="appver"></b></span>
+                    <button id="updatecheck">Check for updates</button>
+                </div>
+                <div class="mut" id="updatestat" style="margin-top: 6px">Updates are checked automatically.</div>
+                <div class="progress" id="updateprog">
+                    <div id="updateprogfill"></div>
+                </div>
+            </fieldset>
             <div class="bar" style="justify-content: flex-end"><button class="pri" id="close">Done</button></div>
         </dialog>
         <dialog id="imgdlg" aria-label="File preview">
@@ -1204,6 +1232,7 @@
         <script src="providers.js"></script>
         <script src="rename.js"></script>
         <script src="exif.js"></script>
+        <script src="updates.js"></script>
         <script src="app.js"></script>
     </body>
 </html>

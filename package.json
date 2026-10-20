@@ -6,15 +6,17 @@
     "main": "main.js",
     "scripts": {
         "start": "electron .",
-        "dist": "electron-builder --mac",
-        "dist:signed": "electron-builder --mac -c.mac.notarize=true",
+        "dist": "electron-builder --mac --publish never",
+        "dist:all": "electron-builder --mac --x64 --arm64 --publish never",
+        "dist:signed": "electron-builder --mac --publish never -c.mac.notarize=true",
+        "dist:signed:all": "electron-builder --mac --x64 --arm64 --publish never -c.mac.notarize=true",
         "test": "node --test",
         "lint": "eslint .",
         "pricing:update": "node scripts/update-pricing.js",
         "format": "prettier --write ."
     },
     "build": {
-        "appId": "com.example.misnomer",
+        "appId": "io.github.mattred1.misnomer",
         "productName": "Misnomer",
         "files": [
             "main.js",
@@ -26,13 +28,20 @@
         "mac": {
             "category": "public.app-category.productivity",
             "target": [
-                "dmg"
+                "dmg",
+                "zip"
             ],
             "hardenedRuntime": true,
             "gatekeeperAssess": false
+        },
+        "publish": {
+            "provider": "github",
+            "owner": "mattred1",
+            "repo": "misnomer"
         }
     },
     "dependencies": {
+        "electron-updater": "^6.8.9",
         "jszip": "^3.10.2",
         "pdfjs-dist": "^3.11.174"
     },

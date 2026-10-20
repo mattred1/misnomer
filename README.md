@@ -27,6 +27,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Presets** — save and switch between template + separator + date format + instructions + fields combinations.
 - **Safe output** — duplicate names within a batch are auto-suffixed (`-2`, `-3`) and illegal filename characters are stripped.
 - **Export** — save a copy of a single row, or download the whole batch as a ZIP.
+- **Auto-update** — the packaged app checks GitHub Releases on launch, downloads a new version in the background, and offers a restart when it is ready. Requires a signed, notarized build.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
 - **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
 - **Thumbnail previews** — every image and PDF row shows a thumbnail of its first page, generated only when the row scrolls into view and cached for reuse. Hover for the original filename, and click or press Enter for a larger view; text and Office rows show a file-type badge.
@@ -57,7 +58,7 @@ Photos with no printed or visible date fall back to the capture date stored in E
 
 ## Requirements
 
-- macOS (packaging is currently configured for macOS `.dmg` only)
+- macOS (packaging targets macOS DMG and ZIP)
 - Node.js 24+ and npm (for development; matches `.nvmrc` and CI)
 - **For the cloud engine:** an API key for whichever provider you choose
 - **For the local engine:** `brew install llama.cpp`, then a vision `.gguf` model and its matching `mmproj` `.gguf`
@@ -166,14 +167,15 @@ Filesystem work in the main process — recursive folder scans, file reads, dire
 ## Building a distributable
 
 ```bash
-npm run dist
+npm run dist       # current architecture
+npm run dist:all   # Intel + Apple Silicon
 ```
 
-This runs `electron-builder --mac` and produces a DMG in `dist/`. Local builds are unsigned unless signing credentials are present, so Gatekeeper may warn first-time users.
+These produce DMG and ZIP artifacts plus `latest-mac.yml` in `dist/`. The ZIP and `latest-mac.yml` are what `electron-updater` consumes; the DMG remains the manual install. Local builds are unsigned unless signing credentials are present, so Gatekeeper may warn first-time users and auto-update will not install.
 
 ### Signed and notarized builds
 
-The build is signing-ready: Hardened Runtime is enabled, and `npm run dist:signed` turns on electron-builder's notarization step. Signed releases require an Apple Developer Program membership and a **Developer ID Application** certificate.
+The build is signing-ready: Hardened Runtime is enabled, and `npm run dist:signed` (or `npm run dist:signed:all`) turns on electron-builder's notarization step. Signed releases require an Apple Developer Program membership and a **Developer ID Application** certificate.
 
 Add these secrets under **Settings → Secrets and variables → Actions**:
 
@@ -186,19 +188,19 @@ Add these secrets under **Settings → Secrets and variables → Actions**:
 | `APPLE_API_ISSUER` | App Store Connect issuer ID                                  |
 | `APPLE_TEAM_ID`    | 10-character Apple Developer team ID                         |
 
-Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds an unsigned DMG when signing credentials are absent and a signed, notarized DMG when they are present, then verifies the signature and stapling ticket before uploading.
+Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds an unsigned DMG and ZIP when signing credentials are absent and a signed, notarized pair when they are present, then verifies the signature and stapling ticket before uploading.
 
 To publish a release:
 
-1. Replace `com.example.misnomer` in `package.json` with a stable reverse-DNS bundle ID.
-2. Commit the change and run `npm version patch` (or `minor` / `major`).
-3. Push the commit and tag with `git push --follow-tags`.
-4. The `CI` workflow tests the tag, builds on macOS, signs and notarizes when secrets are configured, and attaches the DMG to the GitHub release.
+1. Run `npm version patch` (or `minor` / `major`).
+2. Push the commit and tag with `git push --follow-tags`.
+3. The `CI` workflow tests the tag, builds Intel and Apple Silicon DMGs and ZIPs on macOS, signs and notarizes when secrets are configured, and attaches the artifacts plus `latest-mac.yml` to the GitHub release.
+4. Installed apps discover the new release through `electron-updater`. The first updater-enabled release must be installed manually.
 
 For a local signed build, export the same environment variables and run:
 
 ```bash
-npm run dist:signed
+npm run dist:signed:all
 ```
 
 ## Project layout
@@ -214,6 +216,7 @@ renderer/
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
   app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews, usage totals
+  updates.js           Auto-update banner and Settings status
 pricing/
   pricing.json         Exact model prices plus curated family fallbacks
 scripts/
@@ -284,7 +287,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
 - [ ] **Code signing + notarization** for the macOS DMG — the CI build and electron-builder configuration are ready; add Apple Developer secrets to enable notarized releases
 - [ ] **Windows and Linux build targets**
-- [ ] **Auto-update** via `electron-updater`
+- [x] **Auto-update** via `electron-updater` — checks GitHub Releases on launch, downloads in the background, and prompts to restart
 - [x] **GitHub Actions CI** — lint, format check, and tests on PRs; macOS builds on version tags, with signed releases when Apple secrets are configured
 - [ ] **Internationalization** of the prompt and UI
 - [ ] **Headless CLI / watch-folder mode** for scripting and scheduled runs

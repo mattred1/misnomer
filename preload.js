@@ -25,5 +25,9 @@ contextBridge.exposeInMainWorld('api', {
     readFile: call('files:read'),
     existing: call('files:existing'),
     rename: call('files:rename'),
-    listModels: call('models:list')
+    listModels: call('models:list'),
+    getUpdateState: call('updates:get'),
+    checkForUpdates: call('updates:check'),
+    installUpdate: call('updates:install'),
+    onUpdateStatus: (cb) => ipcRenderer.on('updates:status', (_e, state) => cb(state))
 });

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path'),
     fs = require('fs'),
     os = require('os'),
@@ -728,6 +729,81 @@ function migrateUserData() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Auto-update. electron-updater reads app-update.yml from the packaged app and
+// checks the GitHub release feed. Checks are skipped in development because
+// the updater needs the installed, signed bundle.
+// ---------------------------------------------------------------------------
+const UPDATE_DELAY_MS = 5000,
+    UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const updater = {
+    supported: app.isPackaged,
+    state: app.isPackaged ? 'idle' : 'unsupported',
+    version: '',
+    percent: 0,
+    message: ''
+};
+let updateTimer = null;
+
+const updateSnapshot = () => ({ ...updater, currentVersion: app.getVersion() });
+function broadcastUpdate() {
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('updates:status', updateSnapshot());
+    }
+}
+function setUpdater(patch) {
+    Object.assign(updater, patch);
+    broadcastUpdate();
+}
+// Turn electron-updater's raw errors into something the user can act on.
+function updaterError(err) {
+    const raw = String(err?.message || err || 'Update check failed.');
+    let message = raw;
+    if (/ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN|net::/i.test(raw))
+        message = 'Could not reach GitHub. Check your connection and try again.';
+    else if (/latest-mac\.yml|latest version|ERR_UPDATER_CHANNEL_FILE_NOT_FOUND|no published versions/i.test(raw))
+        message = 'No published update was found yet.';
+    else if (/code signature|not signed/i.test(raw)) message = 'This build is not signed, so macOS cannot install updates.';
+    setUpdater({ state: 'error', percent: 0, message });
+}
+function checkForUpdates() {
+    if (!app.isPackaged) return Promise.resolve(updateSnapshot());
+    if (['checking', 'downloading', 'downloaded'].includes(updater.state)) return Promise.resolve(updateSnapshot());
+    return autoUpdater
+        .checkForUpdates()
+        .catch(updaterError)
+        .then(() => updateSnapshot());
+}
+function wireUpdater() {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('checking-for-update', () => setUpdater({ state: 'checking', version: '', percent: 0, message: '' }));
+    autoUpdater.on('update-available', (info) =>
+        setUpdater({ state: 'downloading', version: String(info?.version || ''), percent: 0, message: '' })
+    );
+    autoUpdater.on('update-not-available', () => setUpdater({ state: 'up-to-date', version: '', percent: 0, message: '' }));
+    autoUpdater.on('download-progress', (p) =>
+        setUpdater({ state: 'downloading', percent: Math.max(0, Math.min(100, Math.round(Number(p?.percent) || 0))), message: '' })
+    );
+    autoUpdater.on('update-downloaded', (info) =>
+        setUpdater({ state: 'downloaded', version: String(info?.version || ''), percent: 100, message: '' })
+    );
+    autoUpdater.on('error', updaterError);
+}
+function initUpdater(win) {
+    if (!app.isPackaged) return;
+    wireUpdater();
+    win.webContents.once('did-finish-load', () => setTimeout(checkForUpdates, UPDATE_DELAY_MS));
+    updateTimer = setInterval(checkForUpdates, UPDATE_INTERVAL_MS);
+}
+ipcMain.handle('updates:get', () => updateSnapshot());
+ipcMain.handle('updates:check', () => checkForUpdates());
+ipcMain.handle('updates:install', () => {
+    if (updater.state !== 'downloaded') return false;
+    setImmediate(() => autoUpdater.quitAndInstall());
+    return true;
+});
+
 app.whenReady().then(() => {
     migrateUserData();
     // Match the native title bar and menus to the saved preference before the page paints.
@@ -741,6 +817,8 @@ app.whenReady().then(() => {
     });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     w.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+    initUpdater(w);
 });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', stopServer);
+app.on('before-quit', () => clearInterval(updateTimer));

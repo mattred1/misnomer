@@ -38,7 +38,7 @@ jobs:
         needs: test
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         runs-on: macos-latest
-        timeout-minutes: 45
+        timeout-minutes: 60
         env:
             CSC_LINK: ${{ secrets.CSC_LINK }}
             CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -59,25 +59,36 @@ jobs:
 
             - run: npm ci
 
-            - name: Build unsigned DMG
+            - name: Build unsigned DMG and ZIP
               if: env.HAS_SIGNING != 'true'
-              run: npm run dist
+              run: npm run dist:all
 
-            - name: Build, sign, and notarize DMG
+            - name: Build, sign, and notarize DMG and ZIP
               if: env.HAS_SIGNING == 'true'
-              run: npm run dist:signed
+              run: npm run dist:signed:all
 
             - name: Verify signature and notarization
               if: env.HAS_SIGNING == 'true'
               run: |
-                  spctl --assess --verbose=4 --type exec dist/mac*/Misnomer.app
-                  xcrun stapler validate dist/mac*/Misnomer.app
-                  codesign --verify --deep --strict --verbose=2 dist/mac*/Misnomer.app
+                  for app in dist/mac*/Misnomer.app; do
+                      spctl --assess --verbose=4 --type exec "$app"
+                      xcrun stapler validate "$app"
+                      codesign --verify --deep --strict --verbose=2 "$app"
+                  done
+
+            - name: Verify update metadata
+              run: |
+                  test -f dist/latest-mac.yml
+                  test "$(find dist -maxdepth 1 -name '*.zip' | wc -l | tr -d ' ')" -ge 2
 
             - uses: actions/upload-artifact@v7
               with:
-                  name: misnomer-dmg
-                  path: dist/*.dmg
+                  name: misnomer-dist
+                  path: |
+                      dist/*.dmg
+                      dist/*.zip
+                      dist/latest-mac.yml
+                      dist/*.blockmap
                   if-no-files-found: error
 
     release:
@@ -90,11 +101,15 @@ jobs:
         steps:
             - uses: actions/download-artifact@v8
               with:
-                  name: misnomer-dmg
+                  name: misnomer-dist
                   path: dist
 
             - uses: softprops/action-gh-release@v3
               with:
-                  files: dist/*.dmg
+                  files: |
+                      dist/*.dmg
+                      dist/*.zip
+                      dist/latest-mac.yml
+                      dist/*.blockmap
                   fail_on_unmatched_files: true
                   generate_release_notes: true
