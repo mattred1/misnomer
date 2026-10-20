@@ -26,7 +26,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Custom instructions** — add free-text guidance per batch (e.g. "use the client name from the letterhead, not the sender").
 - **Presets** — save and switch between template + separator + date format + instructions + fields combinations.
 - **Safe output** — duplicate names within a batch are auto-suffixed (`-2`, `-3`) and illegal filename characters are stripped.
-- **Export** — save a copy of a single row, or download the whole batch as a ZIP.
+- **Export** — save a copy of a single row, or export the whole batch as a ZIP. Large exports stream from disk with live progress and a **Cancel ZIP** button.
 - **Auto-update** — the packaged app checks GitHub Releases on launch, downloads a new version in the background, and offers a restart when it is ready. Requires a signed, notarized build.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
 - **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
@@ -152,17 +152,19 @@ npm run pricing:update # refresh model prices from the LiteLLM dataset
 npm run format # Prettier, writes changes in place
 ```
 
-The logic worth testing lives in five dependency-free UMD modules that work in both the renderer and Node:
+The logic worth testing lives in small modules that work in both the renderer and Node:
 
 - `renderer/naming.js` — slugging, template filling, filename sanitizing, duplicate resolution
 - `renderer/extract.js` — pulling text out of Office/ebook/HTML/RTF files
 - `renderer/rename.js` — path handling, collision-aware rename planning, and undo replay
 - `renderer/providers.js` — the provider registry, request shapes, model-catalogue parsing, and settings migration
 - `renderer/exif.js` — EXIF capture-date parsing and date-format rendering
+- `renderer/zip.js` — archive entry naming and duplicate resolution
+- `renderer/zip-archive.js` — streaming ZIP creation, progress, and cancellation (Node only)
 
 Each is covered by its own test file. Run the tests before changing any of them.
 
-Filesystem work in the main process — recursive folder scans, file reads, directory listings, saves, and `sips` conversion — is asynchronous, so the UI stays responsive. Thumbnails are produced lazily for visible rows, three at a time, and cached by path.
+Filesystem work in the main process — recursive folder scans, file reads, directory listings, saves, `sips` conversion, and ZIP streaming — is asynchronous, so the UI stays responsive. Thumbnails are produced lazily for visible rows, three at a time, and cached by path.
 
 ## Building a distributable
 
@@ -215,8 +217,11 @@ renderer/
   providers.js         Provider registry, request shapes, model parsing, pricing, settings migration
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
+  zip.js               Pure archive entry naming and duplicate resolution
+  zip-archive.js       Streaming ZIP writer used by the main process
   app.js               UI state, drag-and-drop, batching, lazy thumbnails, previews, usage totals
   updates.js           Auto-update banner and Settings status
+  export.js            ZIP export UI, progress, and cancellation
 pricing/
   pricing.json         Exact model prices plus curated family fallbacks
 scripts/
@@ -280,7 +285,7 @@ Ordered so that each tier is safe to build on the previous one. Tier 1 items are
 - [x] **Responsive filesystem work** — folder scans, file reads, saves, and `sips` conversion no longer block the main thread
 - [x] **Token and cost estimates** — input/output tokens for every engine, plus estimated USD cost for models in the built-in price table; local runs show no API cost
 - [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
-- [ ] **ZIP export progress** — report progress and keep the controls responsive while large batches are archived
+- [x] **ZIP export progress** — archives stream from disk in the main process, with live progress, screen-reader announcements, and cancellation
 - [ ] **Split `renderer/app.js`** into focused modules (table, thumbnails, preview, settings) if it keeps growing
 - [x] **Keyboard shortcuts** — Cmd/Ctrl shortcuts for settings, adding files, generating names, undoing a rename, and cancelling a batch, documented in the README
 - [ ] **Export/import presets and settings** to JSON for sharing and version control

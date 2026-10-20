@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { startArchive } = require('./renderer/zip-archive.js');
+const ZipEntries = require('./renderer/zip.js');
 const path = require('path'),
     fs = require('fs'),
     os = require('os'),
@@ -605,6 +607,67 @@ ipcMain.handle('files:rename', (_e, plan) =>
         }
     })
 );
+
+// ---------------------------------------------------------------------------
+// ZIP export. Files stream from disk through archiver, so a large batch never
+// has to be loaded into the renderer or held in memory as one buffer.
+// ---------------------------------------------------------------------------
+let zipJob = null,
+    quitting = false;
+
+const zipFail = (message) => ({ ok: false, error: message });
+function sendZip(sender, payload) {
+    if (!sender.isDestroyed()) sender.send('zip:progress', payload);
+}
+
+ipcMain.handle('zip:create', async (event, entries) => {
+    if (zipJob) return zipFail('An archive is already being created.');
+    // Reserve the slot before the save dialog so two clicks cannot start two jobs.
+    zipJob = { cancel: null };
+    try {
+        const plan = ZipEntries.plan(entries);
+        if (!plan.length) throw new Error('There are no completed files to archive.');
+
+        let totalBytes = 0;
+        for (const entry of plan) {
+            const st = await fs.promises.stat(entry.path);
+            if (!st.isFile()) throw new Error(entry.name + ' is not a file.');
+            totalBytes += st.size;
+        }
+
+        const picked = await dialog.showSaveDialog({
+            defaultPath: path.join(app.getPath('downloads'), 'renamed-files.zip'),
+            filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
+        });
+        if (picked.canceled || !picked.filePath) {
+            zipJob = null;
+            return { ok: false, canceled: true };
+        }
+        const target = picked.filePath;
+        const job = startArchive({
+            entries: plan,
+            target,
+            totalBytes,
+            onProgress: (progress) => sendZip(event.sender, progress)
+        });
+        zipJob = job;
+        try {
+            return await job.promise;
+        } finally {
+            zipJob = null;
+        }
+    } catch (err) {
+        zipJob = null;
+        return zipFail(err.message);
+    }
+});
+
+ipcMain.handle('zip:cancel', () => {
+    if (!zipJob || !zipJob.cancel) return false;
+    zipJob.cancel();
+    return true;
+});
+
 ipcMain.handle('settings:get', () => {
     const s = read();
     // Only report which providers have a key plus the last four characters.
@@ -822,3 +885,12 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', stopServer);
 app.on('before-quit', () => clearInterval(updateTimer));
+app.on('before-quit', (event) => {
+    if (quitting || !zipJob || !zipJob.promise) return;
+    // Let the archive stream close and remove its partial file before exiting.
+    quitting = true;
+    event.preventDefault();
+    const job = zipJob;
+    job.cancel();
+    job.promise.finally(() => app.quit());
+});

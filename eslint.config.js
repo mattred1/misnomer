@@ -5,7 +5,7 @@ module.exports = [
     js.configs.recommended,
     { ignores: ['node_modules/**', 'dist/**', 'release/**'] },
     {
-        files: ['main.js', 'preload.js', 'test/**/*.js', 'scripts/**/*.js', 'eslint.config.js'],
+        files: ['main.js', 'preload.js', 'test/**/*.js', 'scripts/**/*.js', 'eslint.config.js', 'renderer/zip-archive.js'],
         languageOptions: {
             ecmaVersion: 2023,
             sourceType: 'commonjs',
@@ -17,6 +17,7 @@ module.exports = [
     },
     {
         files: ['renderer/*.js'],
+        ignores: ['renderer/zip-archive.js'],
         languageOptions: {
             ecmaVersion: 2023,
             sourceType: 'script',
@@ -35,7 +36,14 @@ module.exports = [
     },
     {
         // UMD files: Node must be able to require() them directly for tests.
-        files: ['renderer/naming.js', 'renderer/extract.js', 'renderer/rename.js', 'renderer/providers.js', 'renderer/exif.js'],
+        files: [
+            'renderer/naming.js',
+            'renderer/extract.js',
+            'renderer/rename.js',
+            'renderer/providers.js',
+            'renderer/exif.js',
+            'renderer/zip.js'
+        ],
         languageOptions: {
             globals: { ...globals.browser, module: 'readonly', require: 'readonly' }
         }

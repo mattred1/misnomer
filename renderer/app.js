@@ -548,16 +548,17 @@ function sync() {
     $('#go').disabled = busy || !todo;
     $('#go2').disabled = busy || !todo;
     const any = files.some((f) => f.st === 'done');
-    $('#zip').disabled = !any;
-    $('#zip2').disabled = !any;
-    $('#clr').disabled = busy || !files.length;
+    const zipping = window.Exporter?.isBusy() || false;
+    $('#zip').disabled = !any || zipping;
+    $('#zip2').disabled = !any || zipping;
+    $('#clr').disabled = busy || zipping || !files.length;
     $('#clr').hidden = !files.length;
-    $('#clr2').disabled = busy;
+    $('#clr2').disabled = busy || zipping;
     const anyErr = files.some((f) => f.st === 'error');
     $('#retry').disabled = busy || !anyErr;
     $('#retry2').disabled = busy || !anyErr;
-    $('#rename').disabled = busy || !files.some((f) => f.st === 'done');
-    $('#undo').disabled = busy || !undoStack.length;
+    $('#rename').disabled = busy || zipping || !files.some((f) => f.st === 'done');
+    $('#undo').disabled = busy || zipping || !undoStack.length;
     $('#undo').textContent = undoStack.length ? 'Undo rename (' + undoStack.length + ')' : 'Undo rename';
     $('#cancel').hidden = !busy;
     const total = files.length;
@@ -822,17 +823,6 @@ async function undoLast() {
     files.forEach(paint);
     sync();
 }
-async function zipAll() {
-    const z = new JSZip(),
-        ns = names();
-    for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        if (f.st !== 'done') continue;
-        const r = await api.readFile(f.path);
-        if (r.ok) z.file(ns[i], r.bytes);
-    }
-    save('renamed-files.zip', await z.generateAsync({ type: 'arraybuffer' }));
-}
 function clearAll() {
     files.length = 0;
     undoStack.length = 0;
@@ -854,7 +844,6 @@ $('#retry').onclick = $('#retry2').onclick = retryFailed;
 $('#cancel').onclick = cancelRun;
 $('#rename').onclick = renameAll;
 $('#undo').onclick = undoLast;
-$('#zip').onclick = $('#zip2').onclick = zipAll;
 $('#clr').onclick = $('#clr2').onclick = clearAll;
 $('#imgclose').onclick = () => $('#imgdlg').close();
 $('#imgdlg').addEventListener('close', () => {
@@ -1250,4 +1239,12 @@ $('#hf').onclick = (e) => {
     e.preventDefault();
     api.open('https://huggingface.co/models?pipeline_tag=image-text-to-text&sort=trending&search=gguf');
 };
+window.Exporter.init({
+    getFiles: () => files,
+    names,
+    sync,
+    message: (text) => {
+        $('#msg').textContent = text;
+    }
+});
 loadS(true);
