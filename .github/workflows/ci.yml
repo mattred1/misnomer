@@ -19,7 +19,7 @@ jobs:
         runs-on: ubuntu-26.04
         timeout-minutes: 10
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
 
             - uses: actions/setup-node@v7
               with:
@@ -50,7 +50,7 @@ jobs:
             APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
             HAS_SIGNING: ${{ secrets.CSC_LINK != '' && secrets.APPLE_TEAM_ID != '' && ((secrets.APPLE_API_KEY != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '') || (secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '')) }}
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
 
             - uses: actions/setup-node@v7
               with:
