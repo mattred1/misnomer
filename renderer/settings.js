@@ -93,6 +93,7 @@ window.Settings = (() => {
         if (picked && picked !== saved) {
             s.models = { ...(s.models || {}), [id]: picked };
             await api.setSettings({ provider: id, model: picked });
+            deps.sync?.();
         }
     }
 
@@ -186,7 +187,9 @@ window.Settings = (() => {
             (r) =>
                 (r.onchange = async () => {
                     await api.setSettings({ engine: r.value });
+                    deps.getSettings().engine = r.value;
                     syncEngine();
+                    deps.sync?.();
                 })
         );
         document.querySelectorAll('input[name=theme]').forEach(
@@ -200,7 +203,14 @@ window.Settings = (() => {
             await api.setSettings({ provider: $('#providerSel').value });
             await load();
         };
-        $('#modelSel').onchange = () => api.setSettings({ provider: $('#providerSel').value, model: $('#modelSel').value });
+        $('#modelSel').onchange = async () => {
+            const provider = $('#providerSel').value,
+                model = $('#modelSel').value;
+            await api.setSettings({ provider, model });
+            const s = deps.getSettings();
+            s.models = { ...(s.models || {}), [provider]: model };
+            deps.sync?.();
+        };
         $('#mrefresh').onclick = () => refreshProvider();
         $('#keyhelp').onclick = (e) => {
             const a = e.target.closest('a[data-docs]');

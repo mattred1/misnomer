@@ -53,6 +53,7 @@ window.Preview = (() => {
         renderChips();
         preview();
         deps.hints();
+        deps.sync?.();
     }
 
     function renderChips() {
@@ -150,13 +151,18 @@ window.Preview = (() => {
         $('#fields').oninput = () => {
             renderChips();
             preview();
+            deps.sync?.();
         };
         $('#sep').onchange = () => {
             retext(lastSep, $('#sep').value);
             lastSep = $('#sep').value;
             retpl();
         };
-        $('#datefmt').onchange = preview;
+        $('#datefmt').onchange = () => {
+            preview();
+            deps.sync?.();
+        };
+        $('#extra').oninput = () => deps.sync?.();
         renderChips();
         preview();
     }

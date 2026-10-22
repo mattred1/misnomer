@@ -39,6 +39,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Pause/resume** — an error pauses the batch so you can skip the offending file and continue.
 - **Automatic retry** — rate limits and transient server errors (429, 5xx) are retried up to 3 times with exponential backoff and jitter before a row is marked failed.
 - **Retry failed rows** — the **Retry failed** button re-queues only the rows that errored, leaving finished work untouched.
+- **Regenerate after changes** — changing the template, separator, date format, custom instructions, custom fields, engine, provider, or model re-enables **Generate names** as **Generate new names**, so the same batch can be re-processed without re-adding files. A full regeneration replaces manually edited names with the new result.
 
 ## Supported file types
 
@@ -118,6 +119,8 @@ GitHub disables scheduled workflows after 60 days without repository activity. I
 4. Edit any name you don't like.
 5. Click a thumbnail (or focus it and press Enter) to preview an image or PDF; Esc or a click outside closes it.
 6. Click **Rename in place** to rename the files where they are, or use **Save copy** / **Download all (ZIP)** to export instead.
+
+Changing any naming input after a batch finishes turns **Generate names** into **Generate new names**. Click it to re-process every file with the updated settings; this replaces any names you edited by hand. Changing the inputs back to their previous values disables the button again.
 
 Renames are confirmed before anything happens and never overwrite an existing file: if the name is already taken in that folder, it gets a `-2`, `-3` suffix. **Undo rename** reverts the most recent batch and can be pressed repeatedly to walk back through the session.
 

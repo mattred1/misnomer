@@ -5,7 +5,8 @@ let S = {},
     busy = false,
     uid = 0,
     haltFile = null,
-    cancelled = false;
+    cancelled = false,
+    lastRunSig = null;
 pdfjsLib.GlobalWorkerOptions.workerSrc = '../node_modules/pdfjs-dist/build/pdf.worker.min.js';
 
 // Naming helpers live in naming.js so they can be unit tested with `node --test`.
@@ -99,9 +100,32 @@ function updateProgress(total, finished, busy, paused) {
         lastAnnouncedPct = -1;
     }
 }
+// Everything that changes what Generate names produces. Theme, window layout, and
+// other view preferences are deliberately excluded so they never mark a batch stale.
+function namingSignature() {
+    const local = S.engine === 'local';
+    return JSON.stringify([
+        S.engine,
+        local ? S.localModel : S.provider,
+        local ? S.localMmproj : (S.models || {})[S.provider],
+        local ? S.llamaServer : '',
+        $('#tpl').value,
+        $('#sep').value,
+        $('#datefmt').value,
+        $('#extra').value,
+        Preview.fieldDefs()
+    ]);
+}
+// A finished batch is stale when a naming input changed after its last generation.
+function staleNames() {
+    return files.length > 0 && lastRunSig !== null && namingSignature() !== lastRunSig;
+}
 function sync() {
     const todo = files.some((f) => f.st !== 'done' && f.st !== 'skipped');
-    $('#go').disabled = busy || !todo;
+    const stale = staleNames();
+    $('#go').disabled = busy || (!todo && !stale);
+    $('#go').textContent = stale ? 'Generate new names' : 'Generate names';
+    $('#go').title = stale ? 'Generate names again using the updated naming settings' : '';
     $('#go2').disabled = busy || !todo;
     const any = files.some((f) => f.st === 'done');
     const zipping = window.Exporter?.isBusy() || false;
@@ -212,8 +236,9 @@ async function analyze(f) {
     if (!r.ok) throw new Error(r.error);
     return r;
 }
-async function run() {
+async function run(regenerate) {
     S = await api.getSettings();
+    const wasStale = staleNames();
     halt = false;
     cancelled = false;
     haltFile = null;
@@ -223,12 +248,17 @@ async function run() {
     progressPaused = false;
     $('#err').hidden = true;
     $('#msg').textContent = '';
-    const q = files.filter((f) => f.st !== 'done' && f.st !== 'skipped');
+    const q = regenerate ? files.slice() : files.filter((f) => f.st !== 'done' && f.st !== 'skipped');
     q.forEach((f) => {
         f.st = 'queued';
         f.note = '';
+        // A full regeneration replaces hand-edited names with the new result.
+        if (regenerate) f.edited = false;
         paint(f);
     });
+    // Keep a stale signature when resuming or retrying, so the batch can still be
+    // regenerated as a whole with the settings it started under.
+    if (regenerate || !wasStale) lastRunSig = namingSignature();
     sync();
     const sep = $('#sep').value;
     const worker = async () => {
@@ -389,6 +419,7 @@ async function undoLast() {
 function clearAll() {
     files.length = 0;
     undoStack.length = 0;
+    lastRunSig = null;
     Thumbs.clear();
     Table.clear();
     $('#err').hidden = true;
@@ -397,7 +428,8 @@ function clearAll() {
     $('#msg').textContent = '';
     sync();
 }
-$('#go').onclick = $('#go2').onclick = run;
+$('#go').onclick = () => run(staleNames());
+$('#go2').onclick = () => run(false);
 $('#skip2').onclick = skipAndResume;
 $('#retry').onclick = $('#retry2').onclick = retryFailed;
 $('#cancel').onclick = cancelRun;
@@ -639,15 +671,18 @@ Table.init({
 Preview.init({
     getFiles: () => files,
     paint: Table.paint,
-    hints: Table.hints
+    hints: Table.hints,
+    sync
 });
 Settings.init({
     getSettings: () => S,
     setSettings: (next) => {
         S = next;
+        sync();
     },
     fieldDefs: Preview.fieldDefs,
     applyTemplate: Preview.applyTemplate,
+    sync,
     message: (text) => {
         $('#msg').textContent = text;
     }
