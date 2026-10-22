@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
     checkForUpdates: call('updates:check'),
     installUpdate: call('updates:install'),
     onUpdateStatus: (cb) => ipcRenderer.on('updates:status', (_e, state) => cb(state)),
+    onAnalyzeStatus: (cb) => ipcRenderer.on('analyze:status', (_e, status) => cb(status)),
     zipFiles: call('zip:create'),
     cancelZip: call('zip:cancel'),
     onZipProgress: (cb) => ipcRenderer.on('zip:progress', (_e, progress) => cb(progress))

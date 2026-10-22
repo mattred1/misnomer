@@ -36,8 +36,8 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Undo** — every rename batch is recorded; walk the stack backwards to restore original names.
 - **Folder support** — drop files or folders anywhere in the window, or use **Choose a folder…**, and folders are scanned recursively in the background while the window stays responsive. The empty state previews the filename your current template will produce.
 - **Progress and cancel** — a running count of processed files, and a Cancel button that aborts the in-flight request.
-- **Pause/resume** — an error pauses the batch so you can skip the offending file and continue.
-- **Automatic retry** — rate limits and transient server errors (429, 5xx) are retried up to 3 times with exponential backoff and jitter before a row is marked failed.
+- **Pause/resume** — an error pauses the batch, and the specific reason appears under the affected file's name so you can fix it, skip that file, or continue.
+- **Automatic retry** — rate limits, overload, transient server errors, and network timeouts are tried up to 4 times. The provider's `Retry-After` is honored, the row shows the wait, and the final message says what happened and how many attempts were made.
 - **Retry failed rows** — the **Retry failed** button re-queues only the rows that errored, leaving finished work untouched.
 - **Regenerate after changes** — changing the template, separator, date format, custom instructions, custom fields, engine, provider, or model re-enables **Generate names** as **Generate new names**, so the same batch can be re-processed without re-adding files. A full regeneration replaces manually edited names with the new result.
 
@@ -123,6 +123,17 @@ GitHub disables scheduled workflows after 60 days without repository activity. I
 Changing any naming input after a batch finishes turns **Generate names** into **Generate new names**. Click it to re-process every file with the updated settings; this replaces any names you edited by hand. Changing the inputs back to their previous values disables the button again.
 
 Renames are confirmed before anything happens and never overwrite an existing file: if the name is already taken in that folder, it gets a `-2`, `-3` suffix. **Undo rename** reverts the most recent batch and can be pressed repeatedly to walk back through the session.
+
+### When a file fails
+
+Processing pauses at the first failure, but the batch is not lost. The reason for each failure appears under the file's name in the table; the card at the top points you back to it. **Retry failed** re-queues only the rows that failed, **Skip this file** moves past the current one, and **Resume** continues the rest.
+
+Messages are written to be actionable:
+
+- **Provider limits** — a file over the provider's limit (5 MB per image and 32 MB per request for Anthropic) is reported with its actual size. Retrying will not help until the file is smaller, so save a smaller copy or switch providers.
+- **Rate limits and outages** — 429 and 5xx responses are retried automatically. The row shows the wait, and the final message says how many attempts were made.
+- **Model replies** — a cut-off, empty, or invalid reply is reported as such instead of as a JSON error. Retry, or choose a different model in Settings.
+- **Rename failures** — permission problems, missing files, and names already in use are reported in plain language.
 
 ### Keyboard shortcuts
 
@@ -218,6 +229,7 @@ renderer/
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
   providers.js         Provider registry, request shapes, model parsing, pricing, settings migration
+  errors.js            Error translation: HTTP/transport/model-output/limit messages, retry policy
   exif.js              EXIF capture-date reader and date-format rendering
   rename.js            Path handling, rename planning, and undo replay
   zip.js               Pure archive entry naming and duplicate resolution
@@ -241,6 +253,7 @@ test/
   naming.test.js       Unit tests for naming.js
   extract.test.js      Unit tests for extract.js
   providers.test.js    Unit tests for providers.js
+  errors.test.js       Unit tests for error mapping, retry policy, and provider limits
   rename.test.js       Unit tests for rename.js
   exif.test.js         Unit tests for exif.js
   pricing.test.js      Unit tests for pricing data and the updater helpers

@@ -18,7 +18,10 @@
             kind: 'anthropic',
             base: 'https://api.anthropic.com',
             keyHint: 'sk-ant-...',
-            docs: 'https://console.anthropic.com/settings/keys'
+            docs: 'https://console.anthropic.com/settings/keys',
+            // Checked before sending so an oversized file gets a clear message instead
+            // of a provider error (and without a pointless retry).
+            limits: { imageBytes: 5 * 1024 * 1024, requestBytes: 32 * 1024 * 1024 }
         },
         {
             id: 'openai',
@@ -26,7 +29,8 @@
             kind: 'openai',
             base: 'https://api.openai.com/v1',
             keyHint: 'sk-...',
-            docs: 'https://platform.openai.com/api-keys'
+            docs: 'https://platform.openai.com/api-keys',
+            limits: { imageBytes: 20 * 1024 * 1024 }
         },
         {
             id: 'google',
@@ -34,7 +38,9 @@
             kind: 'google',
             base: 'https://generativelanguage.googleapis.com/v1beta',
             keyHint: 'AIza...',
-            docs: 'https://aistudio.google.com/apikey'
+            docs: 'https://aistudio.google.com/apikey',
+            // Inline (base64) request limit for generateContent.
+            limits: { requestBytes: 20 * 1024 * 1024 }
         },
         {
             id: 'xai',

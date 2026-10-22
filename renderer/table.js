@@ -86,9 +86,13 @@ window.Table = (() => {
             const h = document.querySelector('#r' + f.id + ' .hint');
             if (!h) return;
             const notes = [];
+            if (f.note) notes.push(f.note);
+            else if (f.info && f.info.dateSource === 'exif') notes.push('date from EXIF');
             if (ns[i] !== clean(f.name) + '.' + f.ext) notes.push('duplicate, saves as ' + ns[i]);
-            if (f.info && f.info.dateSource === 'exif') notes.push('date from EXIF');
-            h.textContent = notes.join(' \u00b7 ');
+            const text = notes.join(' \u00b7 ');
+            h.textContent = text;
+            h.title = text;
+            h.classList.toggle('er', !!f.note && !!f.error);
         });
     }
 

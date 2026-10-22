@@ -18,6 +18,7 @@ const {
     estimateCost
 } = require('./renderer/providers.js');
 const Exif = require('./renderer/exif.js');
+const Errors = require('./renderer/errors.js');
 
 const CLOUD_TIMEOUT_MS = 120000,
     LOCAL_TIMEOUT_MS = 120000,
@@ -128,22 +129,13 @@ function prompt(name, text, dateHint, extra, fields) {
     p += ' Original filename: ' + name + (text ? '\n\nExtracted text:\n' + text : '');
     return p;
 }
-function parse(t, keys) {
-    const a = t.indexOf('{'),
-        b = t.lastIndexOf('}');
-    if (a < 0 || b < a) throw new Error('Model did not return JSON: ' + t.slice(0, 120));
-    const j = JSON.parse(t.slice(a, b + 1));
-    const out = {};
-    for (const k of keys) out[k] = String(j[k] || '');
-    return out;
-}
 // Providers report token usage under different names; normalize to input/output.
 const usageOf = (input, output) => {
     const i = Number(input) || 0,
         o = Number(output) || 0;
     return i || o ? { input: i, output: o } : null;
 };
-async function timed(ms, label, signal, fn) {
+async function timed(ms, label, signal, fn, provider) {
     const ctl = new AbortController();
     const onAbort = () => ctl.abort();
     if (signal) {
@@ -154,38 +146,29 @@ async function timed(ms, label, signal, fn) {
     try {
         return await fn(ctl.signal);
     } catch (e) {
-        if (e.name === 'AbortError') {
-            // Distinguish a user cancellation from our own timeout.
-            if (signal && signal.aborted) throw new Error('Cancelled.');
-            throw new Error(label + ' timed out after ' + ms / 1000 + ' seconds.');
-        }
-        const err = new Error(e.cause?.message ? e.message + ': ' + e.cause.message : e.message);
-        // Keep the HTTP status so attempt() can decide whether the call is worth retrying.
-        if (e.status) err.status = e.status;
-        throw err;
+        // Distinguish a user cancellation from our own timeout.
+        if (e.name === 'AbortError')
+            throw Errors.transportError(e, { label, provider, timeoutMs: ms, cancelled: !!(signal && signal.aborted) });
+        // Errors raised by the adapters already have a user-facing message and status.
+        if (e && e.friendly) throw e;
+        throw Errors.transportError(e, { label, provider });
     } finally {
         clearTimeout(t);
         if (signal) signal.removeEventListener('abort', onAbort);
     }
 }
-const httpError = (label, status, detail) => {
-    const e = new Error(label + ' ' + status + ': ' + detail);
-    e.status = status;
-    return e;
-};
-// Rate limiting, overload, and transient server failures are worth waiting out.
-const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
-const RETRIES = 3;
-async function attempt(fn) {
-    for (let i = 0; ; i++) {
+// Reads the body once so a non-JSON error page still yields a useful message.
+async function readResponse(r) {
+    const text = await r.text().catch(() => '');
+    let body = null;
+    if (text) {
         try {
-            return await fn();
-        } catch (e) {
-            if (i >= RETRIES - 1 || !RETRY_STATUS.has(e.status)) throw e;
-            // Exponential backoff with jitter so parallel workers do not retry in lockstep.
-            await new Promise((r) => setTimeout(r, Math.min(8000, 500 * 2 ** i) + Math.random() * 250));
+            body = JSON.parse(text);
+        } catch {
+            /* not JSON; keep the raw text for the error mapper */
         }
     }
+    return { body, text };
 }
 // `req.kind` is decided by the renderer: 'document' (native PDF), 'image' (bytes the
 // provider accepts), or 'text' (extracted from a text/Office/spreadsheet file).
@@ -198,6 +181,7 @@ async function cloud(s, req, signal) {
     if (!model) throw new Error('No ' + p.name + ' model selected. Pick one in Settings.');
     const fields = req.fields || [];
     const text = prompt(req.name, req.text, req.dateHint, req.extra, fields);
+    Errors.preflight(p, req);
     if (p.kind === 'anthropic') return cloudAnthropic(p, key, model, req, text, fields, signal);
     if (p.kind === 'google') return cloudGoogle(p, key, model, req, text, fields, signal);
     return cloudOpenAI(p, key, model, req, text, fields, signal);
@@ -214,25 +198,34 @@ async function cloudAnthropic(p, key, model, req, text, fields, signal) {
         );
     }
     content.push({ type: 'text', text });
-    return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
-        const r = await fetch(p.base + '/v1/messages', {
-            method: 'POST',
-            signal: sig,
-            headers: { ...headersFor(p, key), 'content-type': 'application/json' },
-            body: JSON.stringify({
-                model,
-                max_tokens: 300,
-                messages: [{ role: 'user', content }],
-                output_config: { format: { type: 'json_schema', schema: SCHEMA(req.dateHint, fields) } }
-            })
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || r.statusText);
-        return {
-            info: parse((j.content || []).map((c) => c.text || '').join(''), fieldKeys(fields)),
-            usage: usageOf(j.usage?.input_tokens, j.usage?.output_tokens)
-        };
-    });
+    return timed(
+        CLOUD_TIMEOUT_MS,
+        'API request',
+        signal,
+        async (sig) => {
+            const r = await fetch(p.base + '/v1/messages', {
+                method: 'POST',
+                signal: sig,
+                headers: { ...headersFor(p, key), 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    model,
+                    max_tokens: 512,
+                    messages: [{ role: 'user', content }],
+                    output_config: { format: { type: 'json_schema', schema: SCHEMA(req.dateHint, fields) } }
+                })
+            });
+            const { body: j, text: raw } = await readResponse(r);
+            if (!r.ok) throw Errors.apiError({ provider: p.name, status: r.status, body: j, text: raw, headers: r.headers });
+            return {
+                info: Errors.parseModelJson((j?.content || []).map((c) => c.text || '').join(''), fieldKeys(fields), {
+                    provider: p.name,
+                    stopReason: j?.stop_reason
+                }),
+                usage: usageOf(j?.usage?.input_tokens, j?.usage?.output_tokens)
+            };
+        },
+        p.name
+    );
 }
 
 function openAIContent(req, text) {
@@ -256,34 +249,43 @@ function openAIContent(req, text) {
 async function cloudOpenAI(p, key, model, req, text, fields, signal) {
     const body = {
         model,
-        max_tokens: 300,
+        max_tokens: 512,
         temperature: 0.1,
         messages: [{ role: 'user', content: openAIContent(req, text) }],
         response_format: { type: 'json_schema', json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) } }
     };
-    return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
-        const send = (payload) =>
-            fetch(p.base + '/chat/completions', {
-                method: 'POST',
-                signal: sig,
-                headers: { ...headersFor(p, key), 'content-type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-        let r = await send(body);
-        // Not every OpenAI-compatible vendor supports structured outputs. Fall back to
-        // plain JSON and let parse() coerce the shape.
-        if (r.status === 400 || r.status === 422) {
-            const plain = { ...body };
-            delete plain.response_format;
-            r = await send(plain);
-        }
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || j.message || r.statusText);
-        return {
-            info: parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields)),
-            usage: usageOf(j.usage?.prompt_tokens, j.usage?.completion_tokens)
-        };
-    });
+    return timed(
+        CLOUD_TIMEOUT_MS,
+        'API request',
+        signal,
+        async (sig) => {
+            const send = (payload) =>
+                fetch(p.base + '/chat/completions', {
+                    method: 'POST',
+                    signal: sig,
+                    headers: { ...headersFor(p, key), 'content-type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            let r = await send(body);
+            // Not every OpenAI-compatible vendor supports structured outputs. Fall back to
+            // plain JSON and let parseModelJson() coerce the shape.
+            if (r.status === 400 || r.status === 422) {
+                const plain = { ...body };
+                delete plain.response_format;
+                r = await send(plain);
+            }
+            const { body: j, text: raw } = await readResponse(r);
+            if (!r.ok) throw Errors.apiError({ provider: p.name, status: r.status, body: j, text: raw, headers: r.headers });
+            return {
+                info: Errors.parseModelJson(j?.choices?.[0]?.message?.content || '', fieldKeys(fields), {
+                    provider: p.name,
+                    stopReason: j?.choices?.[0]?.finish_reason
+                }),
+                usage: usageOf(j?.usage?.prompt_tokens, j?.usage?.completion_tokens)
+            };
+        },
+        p.name
+    );
 }
 
 async function cloudGoogle(p, key, model, req, text, fields, signal) {
@@ -295,28 +297,41 @@ async function cloudGoogle(p, key, model, req, text, fields, signal) {
     parts.push({ text });
 
     const url = p.base + '/' + String(model).replace(/^models\//, '') + ':generateContent?key=' + encodeURIComponent(key);
-    return timed(CLOUD_TIMEOUT_MS, 'API request', signal, async (sig) => {
-        const r = await fetch(url, {
-            method: 'POST',
-            signal: sig,
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ role: 'user', parts }],
-                generationConfig: {
-                    maxOutputTokens: 300,
-                    temperature: 0.1,
-                    responseMimeType: 'application/json',
-                    responseSchema: googleSchema(SCHEMA(req.dateHint, fields))
-                }
-            })
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || r.statusText);
-        return {
-            info: parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join(''), fieldKeys(fields)),
-            usage: usageOf(j.usageMetadata?.promptTokenCount, j.usageMetadata?.candidatesTokenCount)
-        };
-    });
+    return timed(
+        CLOUD_TIMEOUT_MS,
+        'API request',
+        signal,
+        async (sig) => {
+            const r = await fetch(url, {
+                method: 'POST',
+                signal: sig,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ role: 'user', parts }],
+                    generationConfig: {
+                        maxOutputTokens: 512,
+                        temperature: 0.1,
+                        responseMimeType: 'application/json',
+                        responseSchema: googleSchema(SCHEMA(req.dateHint, fields))
+                    }
+                })
+            });
+            const { body: j, text: raw } = await readResponse(r);
+            if (!r.ok) throw Errors.apiError({ provider: p.name, status: r.status, body: j, text: raw, headers: r.headers });
+            return {
+                info: Errors.parseModelJson(
+                    (j?.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join(''),
+                    fieldKeys(fields),
+                    {
+                        provider: p.name,
+                        stopReason: j?.candidates?.[0]?.finishReason
+                    }
+                ),
+                usage: usageOf(j?.usageMetadata?.promptTokenCount, j?.usageMetadata?.candidatesTokenCount)
+            };
+        },
+        p.name
+    );
 }
 
 let srv = null,
@@ -371,35 +386,44 @@ async function local(s, req, signal) {
     let imgs = [];
     if (req.kind === 'image') imgs = [img(req.bytes, MIME[req.ext])];
     else if (req.kind === 'document') imgs = (req.pages || []).map((b) => img(b, 'image/jpeg'));
-    return timed(LOCAL_TIMEOUT_MS, 'Local model request', signal, async (sig) => {
-        const r = await fetch('http://127.0.0.1:' + PORT + '/v1/chat/completions', {
-            method: 'POST',
-            signal: sig,
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-                max_tokens: 300,
-                temperature: 0.1,
-                messages: [
-                    {
-                        role: 'user',
-                        content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) }]
+    return timed(
+        LOCAL_TIMEOUT_MS,
+        'Local model request',
+        signal,
+        async (sig) => {
+            const r = await fetch('http://127.0.0.1:' + PORT + '/v1/chat/completions', {
+                method: 'POST',
+                signal: sig,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    max_tokens: 512,
+                    temperature: 0.1,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [...imgs, { type: 'text', text: prompt(req.name, req.text, req.dateHint, req.extra, fields) }]
+                        }
+                    ],
+                    // llama-server (OpenAI-compatible) grammar-constrains output to this schema when supported.
+                    // Falls back harmlessly on older builds since parseModelJson() below still extracts JSON from free text.
+                    response_format: {
+                        type: 'json_schema',
+                        json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) }
                     }
-                ],
-                // llama-server (OpenAI-compatible) grammar-constrains output to this schema when supported.
-                // Falls back harmlessly on older builds since parse() below still extracts JSON from free text.
-                response_format: {
-                    type: 'json_schema',
-                    json_schema: { name: 'file_info', strict: true, schema: SCHEMA(req.dateHint, fields) }
-                }
-            })
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw httpError('Local server error', r.status, j.error?.message || r.statusText);
-        return {
-            info: parse(j.choices?.[0]?.message?.content || '', fieldKeys(fields)),
-            usage: usageOf(j.usage?.prompt_tokens, j.usage?.completion_tokens)
-        };
-    });
+                })
+            });
+            const { body: j, text: raw } = await readResponse(r);
+            if (!r.ok) throw Errors.apiError({ provider: 'The local model', status: r.status, body: j, text: raw, headers: r.headers });
+            return {
+                info: Errors.parseModelJson(j?.choices?.[0]?.message?.content || '', fieldKeys(fields), {
+                    provider: 'The local model',
+                    stopReason: j?.choices?.[0]?.finish_reason
+                }),
+                usage: usageOf(j?.usage?.prompt_tokens, j?.usage?.completion_tokens)
+            };
+        },
+        'the local model'
+    );
 }
 
 // Track in-flight requests so the renderer's Cancel button can abort them.
@@ -426,13 +450,25 @@ async function captureDate(filePath, dateFormat) {
             });
     }
 }
-ipcMain.handle('analyze', async (_e, req) => {
+ipcMain.handle('analyze', async (e, req) => {
     const s = read();
     const ctl = new AbortController();
     inflight.add(ctl);
     req = { ...req, dateHint: DATE_HINTS[req.dateFormat] || DEFAULT_DATE_HINT };
+    const label = s.provider === 'local' ? 'the local model' : providerOf(s).name;
+    // Surface retry waits on the row instead of leaving the app looking stuck.
+    const notify = (message) => {
+        try {
+            if (!e.sender.isDestroyed()) e.sender.send('analyze:status', { id: req.id, message });
+        } catch {
+            /* the window closed while the request was retrying */
+        }
+    };
     try {
-        const result = await attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)));
+        const result = await Errors.attempt(() => (s.provider === 'local' ? local(s, req, ctl.signal) : cloud(s, req, ctl.signal)), {
+            signal: ctl.signal,
+            onRetry: ({ attempt, of, waitMs, error }) => notify(Errors.retryMessage(error, { attempt, of, waitMs }))
+        });
         const info = result.info;
         // Fill in an estimated cost where the provider/model has a known list price.
         if (result.usage) {
@@ -451,8 +487,17 @@ ipcMain.handle('analyze', async (_e, req) => {
             }
         }
         return { ok: true, info, usage: result.usage || null };
-    } catch (e) {
-        return { ok: false, error: e.message };
+    } catch (err) {
+        const message = err && err.message ? err.message : 'Something went wrong.';
+        if (!err || !err.cancelled)
+            console.error(
+                '[analyze]',
+                label + ':',
+                err && err.status ? 'HTTP ' + err.status : 'error',
+                err && err.requestId ? 'request ' + err.requestId : '',
+                (err && (err.detail || err.message)) || message
+            );
+        return { ok: false, error: message };
     } finally {
         inflight.delete(ctl);
     }
@@ -567,7 +612,7 @@ ipcMain.handle('files:read', async (_e, p) => {
     try {
         return { ok: true, bytes: await fs.promises.readFile(p) };
     } catch (e) {
-        return { ok: false, error: e.message };
+        return { ok: false, error: Errors.fsError(e, { name: path.basename(String(p)), action: 'read' }).message };
     }
 });
 
@@ -599,11 +644,11 @@ ipcMain.handle('files:rename', (_e, plan) =>
             // On a case-insensitive volume a case-only rename resolves to the same file,
             // so existsSync would wrongly look like a collision.
             const caseOnly = from.toLowerCase() === to.toLowerCase();
-            if (!caseOnly && fs.existsSync(to)) return { id: e.id, ok: false, error: 'That name is already taken.' };
+            if (!caseOnly && fs.existsSync(to)) return { id: e.id, ok: false, error: 'Another file already uses that name.' };
             fs.renameSync(from, to);
             return { id: e.id, ok: true };
         } catch (err) {
-            return { id: e.id, ok: false, error: err.message };
+            return { id: e.id, ok: false, error: Errors.fsError(err, { name: path.basename(to || from), action: 'rename' }).message };
         }
     })
 );
@@ -722,20 +767,32 @@ ipcMain.handle('models:list', async (_e, providerId) => {
     try {
         const check = authRequest(p, key);
         if (check) {
-            const r = await fetch(check.url, { headers: check.headers });
+            const r = await timed(
+                20000,
+                'Connection check',
+                null,
+                (signal) => fetch(check.url, { headers: check.headers, signal }),
+                p.name
+            );
             if (!r.ok) {
-                const j = await r.json().catch(() => ({}));
-                throw httpError(p.name + ' error', r.status, j.error?.message || r.statusText);
+                const { body: j, text: raw } = await readResponse(r);
+                throw Errors.apiError({ provider: p.name, status: r.status, body: j, text: raw, headers: r.headers });
             }
         }
-        const models = await timed(20000, 'Model list request', null, async (signal) => {
-            const r = await fetch(modelUrl(p, key), { headers: headersFor(p, key), signal });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw httpError(p.name + ' error', r.status, j.error?.message || j.message || r.statusText);
-            const list = parseModels(p, j);
-            if (!list.length) throw new Error('The key works, but no models were returned.');
-            return list;
-        });
+        const models = await timed(
+            20000,
+            'Model list request',
+            null,
+            async (signal) => {
+                const r = await fetch(modelUrl(p, key), { headers: headersFor(p, key), signal });
+                const { body: j, text: raw } = await readResponse(r);
+                if (!r.ok) throw Errors.apiError({ provider: p.name, status: r.status, body: j, text: raw, headers: r.headers });
+                const list = parseModels(p, j);
+                return list;
+            },
+            p.name
+        );
+        if (!models.length) throw new Error('The key works, but no models were returned.');
         return { ok: true, models };
     } catch (e) {
         return { ok: false, error: e.message };

@@ -1133,6 +1133,11 @@ td.o {
     padding: 0 8px;
     margin-top: 3px;
     font-size: 11px;
+    line-height: 1.45;
+}
+
+.hint.er {
+    color: var(--er);
 }
 
 .st {
