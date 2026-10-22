@@ -12,6 +12,7 @@
         "dist:signed:all": "electron-builder --mac --x64 --arm64 --publish never -c.mac.notarize=true",
         "test": "node --test",
         "lint": "eslint .",
+        "icons": "electron scripts/build-icons.js",
         "pricing:update": "node scripts/update-pricing.js",
         "format": "prettier --write ."
     },
@@ -26,6 +27,7 @@
             "node_modules/**/*"
         ],
         "mac": {
+            "icon": "build/icon.icns",
             "category": "public.app-category.productivity",
             "target": [
                 "dmg",

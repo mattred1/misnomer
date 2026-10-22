@@ -162,6 +162,7 @@ Values are lowercased, accent-stripped, and separated by the chosen separator. E
 ```bash
 npm test      # unit tests for every pure module (node --test)
 npm run lint  # ESLint
+npm run icons # regenerate the app, Dock, and sidebar icons from build/icon.icon
 npm run pricing:update # refresh model prices from the LiteLLM dataset
 npm run format # Prettier, writes changes in place
 ```
@@ -179,6 +180,18 @@ The logic worth testing lives in small modules that work in both the renderer an
 Each is covered by its own test file. Run the tests before changing any of them.
 
 Filesystem work in the main process — recursive folder scans, file reads, directory listings, saves, `sips` conversion, and ZIP streaming — is asynchronous, so the UI stays responsive. Thumbnails are produced lazily for visible rows, three at a time, and cached by path.
+
+### Icons
+
+`build/icon.icon` is the Icon Composer source. It holds both artwork variants: the light layer shows in light appearance and the dark layer shows in dark appearance. `build/icon.icns` is generated from it and is what `electron-builder` ships; pointing the build at the `.icon` directly would require Xcode 26+, while the committed `.icns` builds with Command Line Tools alone. The ICNS and development Dock PNG use Apple's macOS icon grid (artwork inset to 824 of 1024 pixels) so they match the size of neighboring Dock icons; the sidebar images stay edge to edge inside their own tile.
+
+After editing the document in Icon Composer, regenerate everything with:
+
+```bash
+npm run icons
+```
+
+The script needs Icon Composer installed and uses the Atkinson Hyperlegible Next font that the artwork's text references.
 
 ## Building a distributable
 
@@ -222,10 +235,17 @@ npm run dist:signed:all
 ## Project layout
 
 ```
+build/
+  icon.icon/           Icon Composer source with light and dark appearance layers
+  icon.icns            Generated macOS app icon used by electron-builder
+  icon-512.png         Generated Dock icon used in development
 main.js                Electron main process: IPC handlers, model calls, usage capture, settings, async file I/O
 preload.js             contextBridge surface exposed to the renderer as window.api
 renderer/
   index.html           Markup, styling, and the preview dialog
+  assets/
+    icon-light.png     Sidebar brand artwork for light appearance
+    icon-dark.png      Sidebar brand artwork for dark appearance
   naming.js            Pure naming logic: slug, template fill, sanitizing, dedupe
   extract.js           Text extraction from text, markup, and Office/ebook containers
   providers.js         Provider registry, request shapes, model parsing, pricing, settings migration
@@ -244,6 +264,7 @@ renderer/
 pricing/
   pricing.json         Exact model prices plus curated family fallbacks
 scripts/
+  build-icons.js       Regenerates icon.icns and the PNG icons from build/icon.icon
   pricing-lib.js       Provider mapping and validation for the pricing updater
   update-pricing.js    Refreshes pricing.json from the LiteLLM dataset
 .github/workflows/

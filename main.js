@@ -926,6 +926,9 @@ ipcMain.handle('updates:install', () => {
 
 app.whenReady().then(() => {
     migrateUserData();
+    if (!app.isPackaged && process.platform === 'darwin') {
+        app.dock.setIcon(path.join(__dirname, 'build', 'icon-512.png'));
+    }
     // Match the native title bar and menus to the saved preference before the page paints.
     const theme = read().theme;
     nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
