@@ -56,16 +56,22 @@ window.Preview = (() => {
     }
 
     function renderChips() {
-        const keys = RESERVED_KEYS.concat(fieldDefs().map((f) => f.key));
+        const defs = fieldDefs();
+        const entries = RESERVED_KEYS.map((key) => ({ key, custom: false })).concat(
+            defs.map((f) => ({ key: f.key, custom: true, description: f.description }))
+        );
         $('#chips').innerHTML = '';
-        for (const k of keys) {
+        for (const { key, custom, description } of entries) {
             const b = document.createElement('button');
-            b.textContent = '{' + k + '}';
+            b.type = 'button';
+            b.textContent = '{' + key + '}';
+            if (custom) b.className = 'cust';
+            if (description) b.title = description;
             b.onclick = () => {
                 const v = $('#tpl').value.trim(),
                     sep = $('#sep').value;
                 // A separator only belongs between fields, never before the first one.
-                $('#tpl').value = v ? v + (v.endsWith(sep) ? '' : sep) + '{' + k + '}' : '{' + k + '}';
+                $('#tpl').value = v ? v + (v.endsWith(sep) ? '' : sep) + '{' + key + '}' : '{' + key + '}';
                 retpl();
             };
             $('#chips').append(b);
@@ -81,7 +87,7 @@ window.Preview = (() => {
         const used = placeholders(t),
             known = RESERVED_KEYS.concat(defs.map((f) => f.key));
         const unknown = used.filter((k) => !known.includes(k));
-        const custom = used.filter((k) => !RESERVED_KEYS.includes(k));
+        const custIndex = (k) => defs.findIndex((d) => d.key === k);
         const sample = { ...SAMPLE, date: Exif.formatDate(SAMPLE.date, $('#datefmt').value) };
         for (const d of defs) sample[d.key] = d.key;
         const built = build(sample, t, sep);
@@ -111,19 +117,19 @@ window.Preview = (() => {
                     pv.append(s);
                 }
                 const span = document.createElement('span');
-                span.className = p.key ? 'tok' : 'lit';
-                if (p.key) span.dataset.key = p.key;
+                if (p.key) {
+                    const ci = custIndex(p.key);
+                    span.className = 'tok' + (ci >= 0 ? ' cust' : '');
+                    span.dataset.key = p.key;
+                    if (ci >= 0 && defs[ci].description) span.title = defs[ci].description;
+                } else span.className = 'lit';
                 span.textContent = p.text;
                 pv.append(span);
             });
         } else pv.textContent = built;
         pv.title = built + '.pdf';
 
-        $('#pvnote').textContent = unknown.length
-            ? 'Unknown placeholder(s): ' + unknown.map((k) => '{' + k + '}').join(', ')
-            : custom.length
-              ? 'Custom field(s): ' + custom.map((k) => '{' + k + '}').join(', ')
-              : '';
+        $('#pvnote').textContent = unknown.length ? 'Unknown placeholder(s): ' + unknown.map((k) => '{' + k + '}').join(', ') : '';
         $('#pvnote').className = unknown.length ? 'mut bad' : 'mut';
     }
 

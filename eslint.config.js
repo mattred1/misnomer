@@ -30,6 +30,7 @@ module.exports = [
                 Table: 'readonly',
                 Preview: 'readonly',
                 Settings: 'readonly',
+                Sidebar: 'readonly',
                 // pdfjs and jszip are loaded as classic scripts from node_modules.
                 pdfjsLib: 'readonly',
                 JSZip: 'readonly'

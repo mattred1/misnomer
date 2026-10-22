@@ -110,6 +110,7 @@ function sync() {
     $('#clr').disabled = busy || zipping || !files.length;
     $('#clr').hidden = !files.length;
     $('#clr2').disabled = busy || zipping;
+    $('#clear').disabled = busy || zipping || !files.length;
     const anyErr = files.some((f) => f.st === 'error');
     $('#retry').disabled = busy || !anyErr;
     $('#retry2').disabled = busy || !anyErr;
@@ -126,6 +127,12 @@ function sync() {
     $('#droptext').textContent = hasFiles
         ? 'Drop more files here, or click to choose files'
         : 'Drop files or folders here, or click to choose files';
+    const named = files.filter((f) => f.st === 'done').length;
+    $('#filecount').textContent = String(total);
+    $('#filecount').hidden = !total;
+    $('#batchsub').textContent = total
+        ? total + (total === 1 ? ' file' : ' files') + (named ? ' \u00b7 ' + named + ' named' : '')
+        : 'Drop files to create clean, consistent names.';
     hints();
     renderUsage();
 }
@@ -396,7 +403,7 @@ $('#retry').onclick = $('#retry2').onclick = retryFailed;
 $('#cancel').onclick = cancelRun;
 $('#rename').onclick = renameAll;
 $('#undo').onclick = undoLast;
-$('#clr').onclick = $('#clr2').onclick = clearAll;
+$('#clr').onclick = $('#clr2').onclick = $('#clear').onclick = clearAll;
 
 // Modal dialogs: focus the first control on open, keep Tab inside, and restore
 // focus to whatever opened the dialog when it closes.
@@ -514,12 +521,47 @@ window.addEventListener('drop', (e) => {
     addPaths([...e.dataTransfer.files].map((f) => api.pathFor(f)));
 });
 
-// Keep the sticky table header tucked below the action bar, which can wrap to two rows.
-const actionsBar = $('#actions');
-const measureActions = () => document.documentElement.style.setProperty('--actions-h', actionsBar.offsetHeight + 'px');
-new ResizeObserver(measureActions).observe(actionsBar);
-window.addEventListener('resize', measureActions);
-measureActions();
+// Sidebar navigation mirrors the single-page batch flow: it highlights the
+// section in view and scrolls the content pane without moving the sidebar.
+const scroller = $('#scroll');
+const navTargets = [...document.querySelectorAll('.navitem[data-target]')].map((link) => ({
+    link,
+    target: link.dataset.target === 'top' ? null : document.getElementById(link.dataset.target)
+}));
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+let navFrame = 0,
+    navActive = 'top';
+function paintNav() {
+    navFrame = 0;
+    const edge = scroller.getBoundingClientRect().top + 96;
+    let active = 'top';
+    for (const { target } of navTargets) {
+        if (target && target.getBoundingClientRect().top <= edge) active = target.id;
+    }
+    if (active === navActive) return;
+    navActive = active;
+    for (const { link, target } of navTargets) {
+        const id = target ? target.id : 'top';
+        if (id === active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    }
+}
+scroller.addEventListener(
+    'scroll',
+    () => {
+        if (!navFrame) navFrame = requestAnimationFrame(paintNav);
+    },
+    { passive: true }
+);
+for (const { link, target } of navTargets) {
+    link.addEventListener('click', () => {
+        const behavior = reduceMotion.matches ? 'auto' : 'smooth';
+        if (target) target.scrollIntoView({ behavior, block: 'start' });
+        else scroller.scrollTo({ top: 0, behavior });
+    });
+}
+paintNav();
+Sidebar.init();
 
 // Global shortcuts. Text fields keep their native undo and Escape behavior.
 const isEditableTarget = (el) =>

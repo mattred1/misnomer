@@ -16,6 +16,9 @@ window.Settings = (() => {
 
     const esc = (s) =>
         String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    // A saved key fills the field's placeholder with dots so it reads as a filled
+    // password field, making the stored secret obvious without exposing it.
+    const KEY_MASK = '\u2022'.repeat(14);
     const hostOf = (url) => {
         try {
             return new URL(url).host;
@@ -65,10 +68,10 @@ window.Settings = (() => {
         const id = $('#providerSel').value;
         const p = providerById(id) || PROVIDERS[0];
         const saved = (s.models || {})[id] || '';
-        $('#key').placeholder = p.keyHint || 'API key';
+        const tail = (s.keys || {})[id];
+        $('#key').placeholder = tail ? KEY_MASK : p.keyHint || 'API key';
         $('#keyhelp').innerHTML = 'Get a key at <a href="#" data-docs="' + esc(p.docs) + '">' + esc(hostOf(p.docs)) + '</a>';
 
-        const tail = (s.keys || {})[id];
         if (!tail) {
             setConn('', 'No ' + p.name + ' key saved.');
             setModelOptions([], 'Save an API key to load models');

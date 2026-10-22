@@ -873,9 +873,13 @@ app.whenReady().then(() => {
     const theme = read().theme;
     nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
     const w = new BrowserWindow({
-        width: 980,
-        height: 760,
+        width: 1120,
+        height: 800,
+        minWidth: 900,
+        minHeight: 620,
         title: 'Misnomer',
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#f5f5f7',
+        ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 16 } } : {}),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
     w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

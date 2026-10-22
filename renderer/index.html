@@ -7,1229 +7,392 @@
             content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:"
         />
         <title>Misnomer</title>
-        <style>
-            /* Bundled locally so the app works offline. Variable fonts support 200-800. */
-            @font-face {
-                font-family: 'Atkinson Hyperlegible Next';
-                font-style: normal;
-                font-display: swap;
-                font-weight: 200 800;
-                src: url('fonts/atkinson-hyperlegible-next-latin-ext.woff2') format('woff2');
-                unicode-range:
-                    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
-                    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-            }
-
-            @font-face {
-                font-family: 'Atkinson Hyperlegible Next';
-                font-style: normal;
-                font-display: swap;
-                font-weight: 200 800;
-                src: url('fonts/atkinson-hyperlegible-next-latin.woff2') format('woff2');
-                unicode-range:
-                    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
-                    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-            }
-
-            @font-face {
-                font-family: 'Atkinson Hyperlegible Mono';
-                font-style: normal;
-                font-display: swap;
-                font-weight: 200 800;
-                src: url('fonts/atkinson-hyperlegible-mono-latin-ext.woff2') format('woff2');
-                unicode-range:
-                    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
-                    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-            }
-
-            @font-face {
-                font-family: 'Atkinson Hyperlegible Mono';
-                font-style: normal;
-                font-display: swap;
-                font-weight: 200 800;
-                src: url('fonts/atkinson-hyperlegible-mono-latin.woff2') format('woff2');
-                unicode-range:
-                    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
-                    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-            }
-
-            :root {
-                color-scheme: light;
-                --bg: #f7f7f5;
-                --fg: #1d1d1b;
-                --mut: #6b6b66;
-                --card: #fff;
-                --bd: #d9d9d2;
-                --ac: #2f5bea;
-                --acf: #fff;
-                --ok: #15703b;
-                --er: #c0392b;
-                --warn: #8a5a12;
-                --tk-date: #2f5bea;
-                --tk-entity: #15703b;
-                --tk-type: #a05a00;
-                --tk-title: #7b3fe4;
-                --tk-custom: #c0265c;
-            }
-
-            html[data-theme='dark'] {
-                color-scheme: dark;
-                --bg: #151514;
-                --fg: #ecece8;
-                --mut: #9a9a93;
-                --card: #1f1f1d;
-                --bd: #34342f;
-                --ac: #6d8cff;
-                --acf: #10121a;
-                --ok: #4cc486;
-                --er: #ff7b6b;
-                --warn: #e0a53c;
-                --tk-date: #7e9cff;
-                --tk-entity: #56cf8f;
-                --tk-type: #e0a53c;
-                --tk-title: #b18cff;
-                --tk-custom: #ff7aa8;
-            }
-
-            @media (prefers-color-scheme: dark) {
-                html[data-theme='auto'] {
-                    color-scheme: dark;
-                    --bg: #151514;
-                    --fg: #ecece8;
-                    --mut: #9a9a93;
-                    --card: #1f1f1d;
-                    --bd: #34342f;
-                    --ac: #6d8cff;
-                    --acf: #10121a;
-                    --ok: #4cc486;
-                    --er: #ff7b6b;
-                    --warn: #e0a53c;
-                    --tk-date: #7e9cff;
-                    --tk-entity: #56cf8f;
-                    --tk-type: #e0a53c;
-                    --tk-title: #b18cff;
-                    --tk-custom: #ff7aa8;
-                }
-            }
-
-            * {
-                box-sizing: border-box;
-            }
-
-            html {
-                scroll-padding-top: calc(var(--actions-h, 0px) + 44px);
-            }
-
-            body {
-                margin: 0;
-                background: var(--bg);
-                color: var(--fg);
-                font:
-                    14px/1.5 'Atkinson Hyperlegible Next',
-                    -apple-system,
-                    system-ui,
-                    sans-serif;
-                padding: 14px;
-            }
-
-            main {
-                max-width: 900px;
-                margin: 0 auto;
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            h1 {
-                font-size: 20px;
-                margin: 0;
-            }
-
-            .card {
-                background: var(--card);
-                border: 1px solid var(--bd);
-                border-radius: 10px;
-                padding: 12px;
-            }
-
-            label {
-                font-size: 13px;
-                color: var(--mut);
-                display: block;
-                margin-bottom: 6px;
-            }
-
-            input[type='text'],
-            input[type='password'] {
-                width: 100%;
-                padding: 8px 10px;
-                border: 1px solid var(--bd);
-                border-radius: 6px;
-                background: var(--bg);
-                color: var(--fg);
-                font:
-                    13px 'Atkinson Hyperlegible Mono',
-                    ui-monospace,
-                    Menlo,
-                    monospace;
-            }
-
-            button {
-                font: inherit;
-                font-size: 13px;
-                border: 1px solid var(--bd);
-                background: var(--bg);
-                color: var(--fg);
-                border-radius: 6px;
-                padding: 6px 10px;
-                white-space: nowrap;
-                cursor: pointer;
-            }
-
-            button.pri {
-                background: var(--ac);
-                color: var(--acf);
-                border-color: var(--ac);
-            }
-
-            button:disabled {
-                opacity: 0.45;
-                cursor: default;
-            }
-
-            button:focus-visible,
-            a:focus-visible,
-            input[type='text']:focus-visible,
-            input[type='password']:focus-visible,
-            select:focus-visible,
-            textarea:focus-visible,
-            #drop:focus-visible {
-                outline: 2px solid var(--ac);
-                outline-offset: 2px;
-            }
-
-            :where(a, button, input, select, textarea, summary, [tabindex]) {
-                scroll-margin-top: calc(var(--actions-h, 0px) + 44px);
-            }
-
-            .chips,
-            .bar {
-                display: flex;
-                gap: 6px;
-                flex-wrap: wrap;
-                align-items: center;
-            }
-
-            .pv {
-                margin-top: 6px;
-                font-size: 13px;
-                color: var(--mut);
-            }
-
-            #pv .tok {
-                color: var(--tk-custom);
-                font-weight: 600;
-            }
-
-            #pv .tok[data-key='date'] {
-                color: var(--tk-date);
-            }
-
-            #pv .tok[data-key='entity'] {
-                color: var(--tk-entity);
-            }
-
-            #pv .tok[data-key='type'] {
-                color: var(--tk-type);
-            }
-
-            #pv .tok[data-key='title'] {
-                color: var(--tk-title);
-            }
-
-            #pv .sep {
-                color: var(--mut);
-                opacity: 0.75;
-            }
-
-            #pv .lit {
-                color: var(--mut);
-            }
-
-            .bad {
-                color: var(--er);
-            }
-
-            .chips {
-                margin-top: 6px;
-            }
-
-            #drop {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 6px;
-                border: 2px dashed var(--bd);
-                border-radius: 10px;
-                padding: 20px 22px;
-                text-align: center;
-                color: var(--mut);
-                cursor: pointer;
-                transition:
-                    border-color 0.15s,
-                    background-color 0.15s,
-                    box-shadow 0.15s;
-            }
-
-            #drop.over {
-                border-color: var(--ac);
-                color: var(--fg);
-                background: color-mix(in srgb, var(--ac) 6%, transparent);
-                box-shadow: 0 14px 40px color-mix(in srgb, var(--ac) 18%, transparent);
-            }
-
-            #drop .drop-ico {
-                display: grid;
-                place-items: center;
-                width: 30px;
-                height: 30px;
-                border-radius: 50%;
-                background: color-mix(in srgb, var(--ac) 12%, transparent);
-                color: var(--ac);
-                font-size: 18px;
-                line-height: 1;
-            }
-
-            #drop .drop-main {
-                color: var(--fg);
-                font-weight: 600;
-            }
-
-            #drop #okhint {
-                max-width: 620px;
-                font-size: 12px;
-                color: var(--mut);
-            }
-
-            #drop.has-files {
-                flex-direction: row;
-                justify-content: center;
-                gap: 10px;
-                padding: 14px;
-            }
-
-            #drop.has-files .drop-ico,
-            #drop.has-files #okhint {
-                display: none;
-            }
-
-            #drop:focus-visible {
-                border-color: var(--ac);
-                color: var(--fg);
-            }
-
-            #err {
-                border-color: var(--er);
-                scroll-margin-top: calc(var(--actions-h, 0px) + 12px);
-            }
-
-            #err b {
-                color: var(--er);
-            }
-
-            #err p {
-                margin: 6px 0 10px;
-                overflow-wrap: anywhere;
-            }
-
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 13px;
-            }
-
-            th,
-            td {
-                text-align: left;
-                padding: 8px 6px;
-                border-bottom: 1px solid var(--bd);
-                vertical-align: middle;
-            }
-
-            thead th {
-                position: sticky;
-                top: var(--actions-h, 0px);
-                z-index: 2;
-                background: var(--card);
-                box-shadow: inset 0 -1px 0 var(--bd);
-                border-bottom: 0;
-                font-size: 11px;
-                font-weight: 600;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                color: var(--mut);
-            }
-
-            tbody tr {
-                animation: rowIn 0.22s ease-out both;
-            }
-
-            tbody tr:hover td {
-                background: color-mix(in srgb, var(--fg) 3.5%, transparent);
-            }
-
-            tbody tr:last-child td {
-                border-bottom: 0;
-            }
-
-            #tc {
-                overflow: visible;
-            }
-
-            @media (max-width: 720px) {
-                #tc {
-                    overflow-x: auto;
-                }
-
-                thead th {
-                    position: static;
-                }
-            }
-
-            td.o {
-                max-width: 220px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                color: var(--mut);
-            }
-
-            #tb td:nth-child(3) {
-                width: 100%;
-            }
-
-            #tb .nm input {
-                min-width: 0;
-            }
-
-            .thumb {
-                position: relative;
-                width: 52px;
-                height: 52px;
-                border: 1px solid var(--bd);
-                border-radius: 6px;
-                background: var(--bg);
-                color: var(--mut);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font:
-                    10px 'Atkinson Hyperlegible Mono',
-                    ui-monospace,
-                    Menlo,
-                    monospace;
-                transition:
-                    border-color 0.15s,
-                    box-shadow 0.15s,
-                    transform 0.15s;
-            }
-
-            .thumb.has {
-                border-color: transparent;
-                cursor: zoom-in;
-            }
-
-            .thumb.has:hover {
-                border-color: var(--ac);
-                box-shadow: 0 6px 18px #0003;
-                transform: translateY(-1px);
-            }
-
-            .thumb.has::after {
-                content: attr(data-label);
-                position: absolute;
-                left: 50%;
-                top: calc(100% + 8px);
-                transform: translate(-50%, -4px);
-                z-index: 5;
-                max-width: min(260px, 60vw);
-                padding: 4px 8px;
-                border-radius: 6px;
-                background: var(--fg);
-                color: var(--bg);
-                font:
-                    11px/1.35 'Atkinson Hyperlegible Next',
-                    -apple-system,
-                    system-ui,
-                    sans-serif;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                opacity: 0;
-                pointer-events: none;
-                transition:
-                    opacity 0.15s,
-                    transform 0.15s;
-            }
-
-            .thumb.has:hover::after,
-            .thumb.has:focus-visible::after {
-                opacity: 1;
-                transform: translate(-50%, 0);
-            }
-
-            .thumb:focus-visible {
-                outline: 2px solid var(--ac);
-                outline-offset: 2px;
-            }
-
-            .thumb img {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                display: block;
-                border-radius: 5px;
-                cursor: zoom-in;
-                transition: transform 0.2s ease;
-            }
-
-            .thumb.has:hover img {
-                transform: scale(1.08);
-            }
-
-            #imgdlg {
-                width: auto;
-                max-width: 94vw;
-            }
-
-            #imgdlg img {
-                display: block;
-                max-width: 88vw;
-                max-height: 76vh;
-                margin: 0 auto;
-                border-radius: 8px;
-            }
-
-            .nm {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-            }
-
-            .nm span {
-                color: var(--mut);
-                font-family: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
-            }
-
-            .st {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-                padding: 2px 8px;
-                border: 1px solid color-mix(in srgb, var(--mut) 18%, transparent);
-                border-radius: 999px;
-                background: color-mix(in srgb, var(--mut) 10%, transparent);
-                font-size: 11.5px;
-                font-weight: 500;
-                line-height: 1.7;
-                white-space: nowrap;
-            }
-
-            .st::before {
-                content: '';
-                flex: 0 0 auto;
-                width: 6px;
-                height: 6px;
-                border-radius: 50%;
-                background: currentColor;
-            }
-
-            .st.ok,
-            .st.er,
-            .st.work {
-                border-color: color-mix(in srgb, currentColor 22%, transparent);
-                background: color-mix(in srgb, currentColor 11%, transparent);
-            }
-
-            .st.work {
-                color: var(--warn);
-            }
-
-            .st.work::before {
-                animation: pulse 1.2s ease-in-out infinite;
-            }
-
-            .ok {
-                color: var(--ok);
-            }
-
-            .dot {
-                width: 9px;
-                height: 9px;
-                border-radius: 50%;
-                background: var(--mut);
-                flex: 0 0 auto;
-            }
-
-            .dot.ok {
-                background: var(--ok);
-            }
-
-            .dot.er {
-                background: var(--er);
-            }
-
-            .dot.wait {
-                background: var(--warn);
-            }
-
-            .er {
-                color: var(--er);
-            }
-
-            .mut {
-                color: var(--mut);
-            }
-
-            .sr-only {
-                position: absolute;
-                width: 1px;
-                height: 1px;
-                padding: 0;
-                margin: -1px;
-                overflow: hidden;
-                clip: rect(0, 0, 0, 0);
-                white-space: nowrap;
-                border: 0;
-            }
-
-            #msg {
-                font-size: 13px;
-                color: var(--mut);
-            }
-
-            dialog {
-                background: var(--card);
-                color: var(--fg);
-                border: 1px solid var(--bd);
-                border-radius: 12px;
-                width: min(640px, 92vw);
-                max-height: 86vh;
-                overflow-y: auto;
-                padding: 18px;
-            }
-
-            dialog::backdrop {
-                background: #0006;
-            }
-
-            dialog[open] {
-                animation: dlgIn 0.16s ease-out;
-            }
-
-            dialog[open]::backdrop {
-                animation: fadeIn 0.16s ease-out;
-            }
-
-            fieldset {
-                border: 1px solid var(--bd);
-                border-radius: 8px;
-                margin: 0 0 12px;
-                padding: 12px;
-            }
-
-            legend {
-                padding: 0 6px;
-                color: var(--mut);
-            }
-
-            .row {
-                display: flex;
-                gap: 8px;
-                align-items: center;
-                margin: 6px 0;
-            }
-
-            .row .p {
-                flex: 1;
-                overflow-wrap: anywhere;
-                font:
-                    12px 'Atkinson Hyperlegible Mono',
-                    ui-monospace,
-                    monospace;
-                color: var(--mut);
-            }
-
-            ol {
-                margin: 6px 0 0;
-                padding-left: 20px;
-            }
-
-            code {
-                font:
-                    12px 'Atkinson Hyperlegible Mono',
-                    ui-monospace,
-                    monospace;
-                background: var(--bg);
-                padding: 1px 4px;
-                border-radius: 4px;
-            }
-
-            a {
-                color: var(--ac);
-                cursor: pointer;
-            }
-
-            select,
-            textarea {
-                width: 100%;
-                padding: 8px 10px;
-                border: 1px solid var(--bd);
-                border-radius: 6px;
-                background: var(--bg);
-                color: var(--fg);
-                font:
-                    13px 'Atkinson Hyperlegible Mono',
-                    ui-monospace,
-                    Menlo,
-                    monospace;
-                resize: vertical;
-            }
-
-            .grid2 {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 8px;
-            }
-
-            .helpwrap {
-                margin-top: 6px;
-                font-size: 12.5px;
-                color: var(--mut);
-            }
-
-            .helpwrap summary {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-                width: fit-content;
-                list-style: none;
-                color: var(--mut);
-                cursor: pointer;
-            }
-
-            .helpwrap summary::-webkit-details-marker {
-                display: none;
-            }
-
-            .helpwrap summary::after {
-                content: '\25BE';
-                font-size: 14px;
-                line-height: 1;
-                transition: transform 0.15s;
-            }
-
-            .helpwrap[open] summary {
-                color: var(--fg);
-            }
-
-            .helpwrap[open] summary::after {
-                transform: rotate(180deg);
-            }
-
-            .helpwrap summary:focus-visible {
-                outline: 2px solid var(--ac);
-                outline-offset: 2px;
-                border-radius: 4px;
-            }
-
-            .help {
-                margin: 4px 0 0;
-                padding-left: 18px;
-                color: var(--mut);
-                font-size: 12.5px;
-            }
-
-            .help li {
-                margin: 2px 0;
-            }
-
-            .presetbar {
-                display: flex;
-                gap: 8px;
-                align-items: flex-end;
-                margin-bottom: 10px;
-            }
-
-            .presetbar > div:first-child {
-                flex: 1;
-            }
-
-            .actions {
-                position: sticky;
-                top: 0;
-                z-index: 30;
-                padding: 7px 0;
-                background: color-mix(in srgb, var(--bg) 90%, transparent);
-                -webkit-backdrop-filter: blur(12px);
-                backdrop-filter: blur(12px);
-            }
-
-            .progress {
-                flex: 1 0 100%;
-                height: 4px;
-                margin-top: 2px;
-                border-radius: 999px;
-                background: color-mix(in srgb, var(--fg) 8%, transparent);
-                overflow: hidden;
-                visibility: hidden;
-                opacity: 0;
-                transition: opacity 0.2s ease;
-            }
-
-            .progress.active {
-                visibility: visible;
-                opacity: 1;
-            }
-
-            .progress > div {
-                width: 0;
-                height: 100%;
-                border-radius: inherit;
-                background: var(--ac);
-                transition: width 0.25s ease;
-            }
-
-            .progress.warn > div {
-                background: var(--warn);
-            }
-
-            .updatebar .progress,
-            #updatesec .progress {
-                width: 100%;
-                margin-top: 10px;
-            }
-
-            .statusline {
-                margin-top: -8px;
-            }
-
-            .statusline #clr {
-                margin-left: auto;
-            }
-
-            #dropmask {
-                position: fixed;
-                inset: 0;
-                z-index: 60;
-                display: grid;
-                place-items: center;
-                pointer-events: none;
-                background: color-mix(in srgb, var(--bg) 72%, transparent);
-                -webkit-backdrop-filter: blur(3px);
-                backdrop-filter: blur(3px);
-            }
-
-            #dropmask[hidden] {
-                display: none;
-            }
-
-            .dropmask-card {
-                display: grid;
-                justify-items: center;
-                gap: 6px;
-                padding: 38px 56px;
-                border: 2px dashed var(--ac);
-                border-radius: 18px;
-                background: color-mix(in srgb, var(--card) 90%, transparent);
-                box-shadow: 0 24px 80px color-mix(in srgb, var(--ac) 22%, transparent);
-                animation: maskIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
-            }
-
-            .dropmask-ico {
-                font-size: 30px;
-                line-height: 1;
-                color: var(--ac);
-            }
-
-            .dropmask-title {
-                font-size: 16px;
-                font-weight: 600;
-            }
-
-            .dropmask-sub {
-                font-size: 12.5px;
-                color: var(--mut);
-            }
-
-            @keyframes rowIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(6px);
-                }
-            }
-
-            @keyframes dlgIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(8px) scale(0.98);
-                }
-            }
-
-            @keyframes fadeIn {
-                from {
-                    opacity: 0;
-                }
-            }
-
-            @keyframes maskIn {
-                from {
-                    opacity: 0;
-                    transform: scale(0.94) translateY(8px);
-                }
-            }
-
-            @keyframes pulse {
-                0%,
-                100% {
-                    opacity: 1;
-                    transform: scale(1);
-                }
-
-                50% {
-                    opacity: 0.55;
-                    transform: scale(0.8);
-                }
-            }
-
-            @media (prefers-reduced-motion: reduce) {
-                *,
-                *::before,
-                *::after {
-                    animation-duration: 0.01ms !important;
-                    animation-iteration-count: 1 !important;
-                    transition-duration: 0.01ms !important;
-                }
-            }
-
-            @media (prefers-contrast: more) {
-                :root {
-                    --mut: #45453f;
-                    --bd: #8c8c84;
-                }
-
-                .card,
-                .thumb,
-                .st {
-                    border-width: 2px;
-                }
-
-                .st {
-                    border-color: currentColor;
-                }
-
-                :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-                    outline-width: 3px;
-                    outline-offset: 3px;
-                }
-            }
-
-            @media (prefers-contrast: more) {
-                html[data-theme='dark'] {
-                    --mut: #d0d0c8;
-                    --bd: #7d7d75;
-                }
-            }
-
-            @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-                html[data-theme='auto'] {
-                    --mut: #d0d0c8;
-                    --bd: #7d7d75;
-                }
-            }
-
-            @media (forced-colors: active) {
-                .card,
-                button,
-                input,
-                select,
-                textarea,
-                dialog,
-                fieldset,
-                #drop,
-                .thumb,
-                .st {
-                    border-color: CanvasText;
-                }
-
-                :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-                    outline: 3px solid Highlight;
-                    outline-offset: 3px;
-                }
-            }
-
-            @media (prefers-reduced-transparency: reduce) {
-                .actions {
-                    background: var(--bg);
-                    -webkit-backdrop-filter: none;
-                    backdrop-filter: none;
-                }
-
-                #dropmask {
-                    background: var(--bg);
-                    -webkit-backdrop-filter: none;
-                    backdrop-filter: none;
-                }
-
-                .dropmask-card {
-                    background: var(--card);
-                }
-            }
-        </style>
+        <link rel="stylesheet" href="app.css" />
+        <script src="sidebar.js"></script>
     </head>
 
     <body>
-        <main>
-            <header>
-                <h1>Misnomer</h1>
-                <button id="gear" aria-keyshortcuts="Meta+, Control+,">Settings</button>
-            </header>
-            <div class="card updatebar" id="updatebanner" hidden role="status" aria-live="polite">
-                <div><b id="updatetitle">Update ready</b> <span class="mut" id="updatemsg"></span></div>
-                <div class="progress" id="updatebannerprog">
-                    <div id="updatebannerfill"></div>
+        <div class="app">
+            <aside class="sidebar">
+                <div class="brand">
+                    <span class="brand-mark" aria-hidden="true">M</span>
+                    <span class="brand-name">Misnomer</span>
                 </div>
-                <div class="bar" style="margin-top: 8px">
-                    <button class="pri" id="updateinstall" hidden>Restart to update</button><button id="updatelater" hidden>Later</button>
+                <nav class="nav" aria-label="Sections">
+                    <div class="nav-label">Workspace</div>
+                    <button class="navitem" id="navtop" type="button" data-target="top" aria-current="page">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.7"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M4 7.5 12 3l8 4.5-8 4.5-8-4.5Z" />
+                            <path d="m4 12 8 4.5 8-4.5" />
+                            <path d="m4 16.5 8 4.5 8-4.5" />
+                        </svg>
+                        <span>Batch</span>
+                    </button>
+                    <button class="navitem" id="navnaming" type="button" data-target="naming">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.7"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V4h9l8.6 8.6a2 2 0 0 1 0 2.8Z" />
+                            <circle cx="7.6" cy="8.6" r="1.1" fill="currentColor" stroke="none" />
+                        </svg>
+                        <span>Naming</span>
+                    </button>
+                    <button class="navitem" id="navfiles" type="button" data-target="files">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.7"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+                            <path d="M14 3v5h5" />
+                        </svg>
+                        <span>Files</span>
+                        <span class="badge" id="filecount" hidden>0</span>
+                    </button>
+                </nav>
+                <div class="sidebar-bottom">
+                    <button class="navitem" id="gear" type="button" aria-keyshortcuts="Meta+, Control+,">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.7"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <circle cx="12" cy="12" r="3.1" />
+                            <path
+                                d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"
+                            />
+                        </svg>
+                        <span>Settings</span>
+                        <kbd>⌘,</kbd>
+                    </button>
+                    <div class="sidebar-note">Local-first file naming</div>
                 </div>
-            </div>
-            <div class="card">
-                <label for="tpl">Name template for this batch</label>
-                <input type="text" id="tpl" value="{title}" spellcheck="false" />
-                <div class="chips" id="chips"></div>
-                <details class="helpwrap">
-                    <summary>What do the fields mean?</summary>
-                    <ul class="help">
-                        <li><code>{title}</code> &mdash; a short 2 to 5 word description of what the file is</li>
-                        <li><code>{entity}</code> &mdash; the vendor, company, or person tied to the document, if any</li>
-                        <li><code>{date}</code> &mdash; the document's date, formatted per the Date format option below</li>
-                        <li><code>{type}</code> &mdash; the document type, like invoice, receipt, screenshot, or photo</li>
-                        <li>Custom fields you define in Settings show up here as extra chips</li>
-                    </ul>
-                </details>
-                <div class="pv">Preview: <code id="pv"></code> <span id="pvnote"></span></div>
-                <div class="grid2">
-                    <div>
-                        <label for="sep">Separator</label>
-                        <select id="sep">
-                            <option value="-">Hyphen ( - )</option>
-                            <option value="_">Underscore ( _ )</option>
-                            <option value=".">Period ( . )</option>
-                            <option value="">None</option>
-                        </select>
+            </aside>
+
+            <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
+
+            <main class="content" id="content">
+                <div class="dragstrip" aria-hidden="true"></div>
+                <div class="scroll" id="scroll">
+                    <div class="inner">
+                        <header class="pagehead" id="top">
+                            <div>
+                                <h1>Batch</h1>
+                                <p class="sub" id="batchsub">Drop files to create clean, consistent names.</p>
+                            </div>
+                        </header>
+
+                        <div class="card updatebar" id="updatebanner" hidden role="status" aria-live="polite">
+                            <div><b id="updatetitle">Update ready</b> <span class="mut" id="updatemsg"></span></div>
+                            <div class="progress" id="updatebannerprog">
+                                <div id="updatebannerfill"></div>
+                            </div>
+                            <div class="bar">
+                                <button class="pri" id="updateinstall" hidden>Restart to update</button
+                                ><button id="updatelater" hidden>Later</button>
+                            </div>
+                        </div>
+
+                        <section class="section" id="naming" aria-labelledby="namingtitle">
+                            <div class="sectionhead">
+                                <h2 class="sectiontitle" id="namingtitle">Naming</h2>
+                            </div>
+                            <div class="card">
+                                <label for="tpl">Name template for this batch</label>
+                                <input type="text" id="tpl" value="{title}" spellcheck="false" />
+                                <div class="chips" id="chips"></div>
+                                <details class="helpwrap">
+                                    <summary>What do the fields mean?</summary>
+                                    <ul class="help">
+                                        <li><code>{title}</code> &mdash; a short 2 to 5 word description of what the file is</li>
+                                        <li><code>{entity}</code> &mdash; the vendor, company, or person tied to the document, if any</li>
+                                        <li><code>{date}</code> &mdash; the document's date, formatted per the Date format option below</li>
+                                        <li><code>{type}</code> &mdash; the document type, like invoice, receipt, screenshot, or photo</li>
+                                        <li>Custom fields from Settings are marked with <code>*</code></li>
+                                    </ul>
+                                </details>
+                                <div class="pv">Preview: <code id="pv"></code> <span id="pvnote"></span></div>
+                                <div class="grid2">
+                                    <div>
+                                        <label for="sep">Separator</label>
+                                        <select id="sep">
+                                            <option value="-">Hyphen ( - )</option>
+                                            <option value="_">Underscore ( _ )</option>
+                                            <option value=".">Period ( . )</option>
+                                            <option value="">None</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="datefmt">Date format</label>
+                                        <select id="datefmt">
+                                            <option value="ymd">YYYY-MM-DD (2026-01-05)</option>
+                                            <option value="mdy">MM-DD-YYYY (01-05-2026)</option>
+                                            <option value="dmy">DD-MM-YYYY (05-01-2026)</option>
+                                            <option value="compact">YYYYMMDD (20260105)</option>
+                                            <option value="ym">YYYY-MM (2026-01)</option>
+                                            <option value="y">YYYY (2026)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <label for="extra" class="spaced">Custom instructions for the AI <span class="opt">(optional)</span></label>
+                                <textarea
+                                    id="extra"
+                                    rows="1"
+                                    spellcheck="false"
+                                    placeholder="e.g. Use the client name from the letterhead, not the sender"
+                                ></textarea>
+                            </div>
+                        </section>
+
+                        <section class="section" id="files" aria-labelledby="filestitle">
+                            <div class="sectionhead">
+                                <h2 class="sectiontitle" id="filestitle">Files</h2>
+                            </div>
+                            <div class="dropwrap">
+                                <div id="drop" role="button" tabindex="0" aria-keyshortcuts="Meta+O Control+O">
+                                    <div class="drop-ico" aria-hidden="true">
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.7"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M12 3v11" />
+                                            <path d="m8 10 4 4 4-4" />
+                                            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                                        </svg>
+                                    </div>
+                                    <div class="drop-main" id="droptext">Drop files or folders here, or click to choose files</div>
+                                    <span id="okhint"></span>
+                                </div>
+                                <div class="addrow">
+                                    <span>Folders are scanned recursively.</span>
+                                    <button id="pickFolder" type="button">Choose a folder&hellip;</button>
+                                </div>
+                            </div>
+                            <input type="file" id="fi" multiple hidden />
+
+                            <div class="card" id="err" role="alert" tabindex="-1" hidden>
+                                <b>Paused: an error stopped processing.</b>
+                                <p id="errmsg"></p>
+                                <div class="bar">
+                                    <button id="zip2">Download completed files (ZIP)</button
+                                    ><button id="retry2" disabled>Retry failed</button><button id="skip2">Skip this file</button
+                                    ><button id="go2" class="pri">Resume</button><button id="clr2">Clear all</button>
+                                </div>
+                            </div>
+
+                            <div class="statusline">
+                                <span id="msg" role="status" aria-live="polite" aria-atomic="true"></span><span id="prog" class="mut"></span
+                                ><span id="progLive" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span
+                                ><span id="zipstat" class="mut"></span
+                                ><span id="zipLive" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span
+                                ><span id="usage" class="mut"></span><button id="clr" hidden disabled>Clear all</button>
+                            </div>
+
+                            <div class="card listcard" id="tc" hidden>
+                                <table>
+                                    <caption class="sr-only">
+                                        Files in this batch
+                                    </caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Preview</th>
+                                            <th scope="col">Original</th>
+                                            <th scope="col">New name (editable)</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col"><span class="sr-only">Actions</span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tb"></tbody>
+                                </table>
+                            </div>
+                        </section>
                     </div>
-                    <div>
-                        <label for="datefmt">Date format</label>
-                        <select id="datefmt">
-                            <option value="ymd">YYYY-MM-DD (2026-01-05)</option>
-                            <option value="mdy">MM-DD-YYYY (01-05-2026)</option>
-                            <option value="dmy">DD-MM-YYYY (05-01-2026)</option>
-                            <option value="compact">YYYYMMDD (20260105)</option>
-                            <option value="ym">YYYY-MM (2026-01)</option>
-                            <option value="y">YYYY (2026)</option>
-                        </select>
+                </div>
+                <div class="actions" id="actions">
+                    <button class="pri" id="go" disabled aria-keyshortcuts="Meta+Enter Control+Enter">Generate names</button
+                    ><button id="retry" disabled>Retry failed</button><button id="cancel" hidden aria-keyshortcuts="Escape">Cancel</button
+                    ><button class="pri" id="rename" disabled>Rename in place</button
+                    ><button id="undo" disabled aria-keyshortcuts="Meta+Alt+Z Control+Alt+Z">Undo rename</button
+                    ><button id="zip" disabled>Download all (ZIP)</button><button id="zipcancel" hidden>Cancel ZIP</button
+                    ><button class="danger" id="clear" disabled>Clear all</button>
+                    <div
+                        class="progress"
+                        id="zipwrap"
+                        role="progressbar"
+                        aria-label="ZIP export progress"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow="0"
+                    >
+                        <div id="zipbar"></div>
+                    </div>
+                    <div class="progress" id="progwrap" aria-hidden="true">
+                        <div id="progbar"></div>
                     </div>
                 </div>
-                <label for="extra" style="margin-top: 8px">Custom instructions for the AI (optional)</label>
-                <textarea
-                    id="extra"
-                    rows="1"
-                    spellcheck="false"
-                    placeholder="e.g. Use the client name from the letterhead, not the sender"
-                ></textarea>
-            </div>
-            <div class="bar" style="margin-bottom: 8px">
-                <button id="pickFolder">Choose a folder&hellip;</button
-                ><span class="mut" style="font-size: 13px">Folders are scanned recursively.</span>
-            </div>
-            <div id="drop" role="button" tabindex="0" aria-keyshortcuts="Meta+O Control+O">
-                <div class="drop-ico" aria-hidden="true">⤓</div>
-                <div class="drop-main" id="droptext">Drop files or folders here, or click to choose files</div>
-                <span id="okhint"></span>
-            </div>
-            <input type="file" id="fi" multiple hidden />
-            <div class="card" id="err" role="alert" tabindex="-1" hidden>
-                <b>Paused: an error stopped processing.</b>
-                <p id="errmsg"></p>
-                <div class="bar">
-                    <button id="zip2">Download completed files (ZIP)</button><button id="retry2" disabled>Retry failed</button
-                    ><button id="skip2">Skip this file</button><button id="go2" class="pri">Resume</button
-                    ><button id="clr2">Clear all</button>
-                </div>
-            </div>
-            <div class="bar actions" id="actions">
-                <button class="pri" id="go" disabled aria-keyshortcuts="Meta+Enter Control+Enter">Generate names</button
-                ><button id="retry" disabled>Retry failed</button><button id="cancel" hidden aria-keyshortcuts="Escape">Cancel</button
-                ><button class="pri" id="rename" disabled>Rename in place</button
-                ><button id="undo" disabled aria-keyshortcuts="Meta+Alt+Z Control+Alt+Z">Undo rename</button
-                ><button id="zip" disabled>Download all (ZIP)</button><button id="zipcancel" hidden>Cancel ZIP</button>
-                <div
-                    class="progress"
-                    id="zipwrap"
-                    role="progressbar"
-                    aria-label="ZIP export progress"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    aria-valuenow="0"
-                >
-                    <div id="zipbar"></div>
-                </div>
-                <div class="progress" id="progwrap" aria-hidden="true">
-                    <div id="progbar"></div>
-                </div>
-            </div>
-            <div class="bar statusline">
-                <span id="msg" role="status" aria-live="polite" aria-atomic="true"></span><span id="prog" class="mut"></span
-                ><span id="progLive" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span
-                ><span id="zipstat" class="mut"></span
-                ><span id="zipLive" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span
-                ><span id="usage" class="mut"></span><button id="clr" hidden disabled>Clear all</button>
-            </div>
-            <div class="card" id="tc" hidden>
-                <table>
-                    <caption class="sr-only">
-                        Files in this batch
-                    </caption>
-                    <thead>
-                        <tr>
-                            <th scope="col">Preview</th>
-                            <th scope="col">Original</th>
-                            <th scope="col">New name (editable)</th>
-                            <th scope="col">Status</th>
-                            <th scope="col"><span class="sr-only">Actions</span></th>
-                        </tr>
-                    </thead>
-                    <tbody id="tb"></tbody>
-                </table>
-            </div>
-        </main>
+            </main>
+        </div>
+
         <dialog id="dlg" aria-labelledby="dlgtitle">
-            <h2 id="dlgtitle" style="margin: 0 0 12px; font-size: 17px">Settings</h2>
-            <fieldset>
-                <legend>Engine</legend>
-                <label class="row"><input type="radio" name="engine" value="cloud" /> Cloud API (120 second timeout per request)</label>
-                <label class="row"><input type="radio" name="engine" value="local" /> Local model (runs on this Mac)</label>
-            </fieldset>
-            <fieldset>
-                <legend>Appearance</legend>
-                <label class="row"><input type="radio" name="theme" value="auto" checked /> Auto (follow system)</label>
-                <label class="row"><input type="radio" name="theme" value="light" /> Light</label>
-                <label class="row"><input type="radio" name="theme" value="dark" /> Dark</label>
-            </fieldset>
-            <fieldset id="apisec">
-                <legend>Cloud API</legend>
-                <label for="providerSel">Provider</label>
-                <select id="providerSel"></select>
+            <div class="prefs-head">
+                <h2 id="dlgtitle">Settings</h2>
+            </div>
+            <div class="prefs-body">
+                <fieldset>
+                    <legend>Engine</legend>
+                    <label class="prefrow"
+                        ><input type="radio" name="engine" value="cloud" /><span class="preftext"
+                            ><b>Cloud API</b><small>120 second timeout per request</small></span
+                        ></label
+                    >
+                    <label class="prefrow"
+                        ><input type="radio" name="engine" value="local" /><span class="preftext"
+                            ><b>Local model</b><small>Runs on this machine</small></span
+                        ></label
+                    >
+                </fieldset>
 
-                <label for="key" style="margin-top: 10px">API key</label>
-                <div class="row">
-                    <input type="password" id="key" autocomplete="off" />
-                    <button id="ksave">Save</button>
-                    <button id="kdel">Remove</button>
-                </div>
-                <div class="row"><span id="dot" class="dot"></span><span class="mut" id="keystat"></span></div>
-                <div class="mut" style="margin-top: 4px" id="keyhelp"></div>
+                <fieldset>
+                    <legend>Appearance</legend>
+                    <label class="prefrow"
+                        ><input type="radio" name="theme" value="auto" checked /><span class="preftext"
+                            ><b>Auto</b><small>Follow the system setting</small></span
+                        ></label
+                    >
+                    <label class="prefrow"
+                        ><input type="radio" name="theme" value="light" /><span class="preftext"><b>Light</b></span></label
+                    >
+                    <label class="prefrow"
+                        ><input type="radio" name="theme" value="dark" /><span class="preftext"><b>Dark</b></span></label
+                    >
+                </fieldset>
 
-                <label for="modelSel" style="margin-top: 10px">Model</label>
-                <div class="row">
-                    <select id="modelSel" style="flex: 1"></select>
-                    <button id="mrefresh">Refresh</button>
-                </div>
-            </fieldset>
-            <fieldset>
-                <legend>Naming presets</legend>
-                <div class="presetbar">
-                    <div>
-                        <label for="presetSel">Saved preset</label
-                        ><select id="presetSel"></select>
+                <fieldset id="apisec">
+                    <legend>Cloud API</legend>
+                    <div class="fieldrow">
+                        <label for="providerSel">Provider</label>
+                        <select id="providerSel"></select>
                     </div>
-                    <button id="presetSave">Save as new</button>
-                    <button id="presetUpdate">Update</button>
-                    <button id="presetDelete">Delete</button>
-                </div>
-                <div class="mut">
-                    Saves the template, separator, date format, custom instructions, and custom fields from the main window.
-                </div>
-            </fieldset>
-            <fieldset>
-                <legend>Custom fields</legend>
-                <label for="fields">One per line, as <code>name = description</code></label>
-                <textarea
-                    id="fields"
-                    rows="3"
-                    spellcheck="false"
-                    placeholder="amount = the total amount due, with its currency symbol&#10;category = a single word grouping the document"
-                ></textarea>
-                <div class="mut" style="margin-top: 6px">
-                    Adds extra values for the model to fill in. Use them in the name template, like <code>{amount}</code>.
-                </div>
-            </fieldset>
-            <fieldset id="localsec">
-                <legend>Local model</legend>
-                <div class="row"><button data-pick="localModel">Model (.gguf)</button><span class="p" id="lm"></span></div>
-                <div class="row">
-                    <button data-pick="localMmproj">Vision projector (mmproj .gguf)</button><span class="p" id="lp"></span>
-                </div>
-                <div class="row"><button data-pick="llamaServer">llama-server binary</button><span class="p" id="lb"></span></div>
-                <div style="margin-top: 10px">
-                    Find models: <a id="hf" href="#">huggingface.co vision GGUF models</a>
-                    <ol>
-                        <li>Install the engine once: <code>brew install llama.cpp</code></li>
-                        <li>Open the link, pick a model repo, then Files and versions.</li>
-                        <li>
-                            Download the main <code>.gguf</code> (a Q4_K_M file is a good start) and the matching <code>mmproj</code>
-                            <code>.gguf</code> from the same repo.
-                        </li>
-                        <li>Choose both files above. The first run takes a while to load the model.</li>
-                    </ol>
-                </div>
-            </fieldset>
-            <fieldset id="updatesec">
-                <legend>Updates</legend>
-                <div class="row" style="justify-content: space-between">
-                    <span>Version <b id="appver"></b></span>
-                    <button id="updatecheck">Check for updates</button>
-                </div>
-                <div class="mut" id="updatestat" style="margin-top: 6px">Updates are checked automatically.</div>
-                <div class="progress" id="updateprog">
-                    <div id="updateprogfill"></div>
-                </div>
-            </fieldset>
-            <div class="bar" style="justify-content: flex-end"><button class="pri" id="close">Done</button></div>
+                    <div class="fieldrow">
+                        <label for="key">API key</label>
+                        <div class="row">
+                            <input type="password" id="key" autocomplete="off" />
+                            <button id="ksave">Save</button>
+                            <button id="kdel">Remove</button>
+                        </div>
+                    </div>
+                    <div class="row"><span id="dot" class="dot"></span><span class="mut" id="keystat"></span></div>
+                    <div class="mut hintline" id="keyhelp"></div>
+                    <div class="fieldrow">
+                        <label for="modelSel">Model</label>
+                        <div class="row">
+                            <select id="modelSel"></select>
+                            <button id="mrefresh">Refresh</button>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Naming presets</legend>
+                    <div class="presetbar">
+                        <div class="presetpick">
+                            <label for="presetSel">Saved preset</label
+                            ><select id="presetSel"></select>
+                        </div>
+                        <button id="presetSave">Save as new</button>
+                        <button id="presetUpdate">Update</button>
+                        <button id="presetDelete">Delete</button>
+                    </div>
+                    <div class="mut">
+                        Saves the template, separator, date format, custom instructions, and custom fields from the main window.
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Custom fields</legend>
+                    <label for="fields">One per line, as <code>name = description</code></label>
+                    <textarea
+                        id="fields"
+                        rows="3"
+                        spellcheck="false"
+                        placeholder="amount = the total amount due, with its currency symbol&#10;category = a single word grouping the document"
+                    ></textarea>
+                    <div class="mut hintline">
+                        Adds extra values for the model to fill in. Use them in the name template, like <code>{amount}</code>.
+                    </div>
+                </fieldset>
+
+                <fieldset id="localsec">
+                    <legend>Local model</legend>
+                    <div class="row"><button data-pick="localModel">Model (.gguf)</button><span class="p" id="lm"></span></div>
+                    <div class="row">
+                        <button data-pick="localMmproj">Vision projector (mmproj .gguf)</button><span class="p" id="lp"></span>
+                    </div>
+                    <div class="row"><button data-pick="llamaServer">llama-server binary</button><span class="p" id="lb"></span></div>
+                    <details class="helpwrap">
+                        <summary>Where do I find models?</summary>
+                        <div>
+                            Find models: <a id="hf" href="#">huggingface.co vision GGUF models</a>
+                            <ol>
+                                <li>Install the engine once: <code>brew install llama.cpp</code></li>
+                                <li>Open the link, pick a model repo, then Files and versions.</li>
+                                <li>
+                                    Download the main <code>.gguf</code> (a Q4_K_M file is a good start) and the matching
+                                    <code>mmproj</code> <code>.gguf</code> from the same repo.
+                                </li>
+                                <li>Choose both files above. The first run takes a while to load the model.</li>
+                            </ol>
+                        </div>
+                    </details>
+                </fieldset>
+
+                <fieldset id="updatesec">
+                    <legend>Updates</legend>
+                    <div class="row between">
+                        <span>Version <b id="appver"></b></span>
+                        <button id="updatecheck">Check for updates</button>
+                    </div>
+                    <div class="mut hintline" id="updatestat">Updates are checked automatically.</div>
+                    <div class="progress" id="updateprog">
+                        <div id="updateprogfill"></div>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="prefs-foot"><button class="pri" id="close">Done</button></div>
         </dialog>
+
         <dialog id="imgdlg" aria-label="File preview">
-            <div
-                class="mut"
-                id="imgname"
-                style="
-                    font:
-                        12px 'Atkinson Hyperlegible Mono',
-                        ui-monospace,
-                        monospace;
-                    margin-bottom: 8px;
-                    overflow-wrap: anywhere;
-                "
-            ></div>
+            <div id="imgname"></div>
             <img id="imgview" alt="" />
-            <div class="bar" style="justify-content: flex-end; margin-top: 10px"><button id="imgclose">Close</button></div>
+            <div class="bar imgbar"><button id="imgclose">Close</button></div>
         </dialog>
+
         <div id="dropmask" hidden aria-hidden="true">
             <div class="dropmask-card">
                 <div class="dropmask-ico">⤓</div>
@@ -1237,6 +400,7 @@
                 <div class="dropmask-sub">They will be added to this batch</div>
             </div>
         </div>
+
         <script src="../node_modules/pdfjs-dist/build/pdf.min.js"></script>
         <script src="../node_modules/jszip/dist/jszip.min.js"></script>
         <script src="naming.js"></script>
