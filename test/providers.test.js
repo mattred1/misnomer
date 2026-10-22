@@ -46,6 +46,20 @@ test('providerById: returns undefined for an unknown id', () => {
     assert.equal(providerById('nope'), undefined);
 });
 
+test('provider registry: documented request limits are present and sane', () => {
+    const anthropic = providerById('anthropic').limits;
+    assert.equal(anthropic.imageBytes, 5 * 1024 * 1024);
+    assert.equal(anthropic.requestBytes, 32 * 1024 * 1024);
+    assert.equal(providerById('openai').limits.imageBytes, 20 * 1024 * 1024);
+    assert.equal(providerById('google').limits.requestBytes, 20 * 1024 * 1024);
+    for (const p of LIST) {
+        if (!p.limits) continue;
+        for (const [key, value] of Object.entries(p.limits)) {
+            assert.ok(Number.isInteger(value) && value > 0, p.id + ' has a bad ' + key);
+        }
+    }
+});
+
 test('headersFor: uses the auth style each API expects', () => {
     assert.deepEqual(headersFor(providerById('anthropic'), 'k'), { 'x-api-key': 'k', 'anthropic-version': '2023-06-01' });
     assert.deepEqual(headersFor(providerById('openai'), 'k'), { authorization: 'Bearer k' });

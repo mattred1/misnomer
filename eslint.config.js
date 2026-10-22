@@ -48,7 +48,8 @@ module.exports = [
             'renderer/rename.js',
             'renderer/providers.js',
             'renderer/exif.js',
-            'renderer/zip.js'
+            'renderer/zip.js',
+            'renderer/errors.js'
         ],
         languageOptions: {
             globals: { ...globals.browser, module: 'readonly', require: 'readonly' }

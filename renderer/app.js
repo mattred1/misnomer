@@ -55,6 +55,7 @@ async function addPaths(paths) {
             name: file.name.replace(/\.[^.]+$/, ''),
             st: 'queued',
             note: '',
+            error: false,
             renamed: false,
             usage: null
         };
@@ -196,6 +197,7 @@ async function analyze(f) {
     const p = await prep(f);
     if (p.kind === 'text' && !p.text) throw new Error('No readable text found in this ' + f.ext.toUpperCase() + ' file.');
     const req = {
+        id: f.id,
         name: f.original,
         path: f.path,
         kind: p.kind,
@@ -227,6 +229,7 @@ async function run() {
     q.forEach((f) => {
         f.st = 'queued';
         f.note = '';
+        f.error = false;
         paint(f);
     });
     sync();
@@ -235,12 +238,17 @@ async function run() {
         for (let f; !halt && (f = q.shift());) {
             f.st = 'working';
             f.usage = null;
+            f.note = '';
+            f.error = false;
             paint(f);
             sync();
             try {
                 const r = await analyze(f);
                 f.info = r.info;
                 f.usage = r.usage || null;
+                // A retry notice is no longer relevant once the request succeeds.
+                f.note = '';
+                f.error = false;
                 // Surface where the date came from, since the model did not read it off the image.
                 if (f.info.dateSource === 'exif') f.note = 'Date taken from the photo\u2019s EXIF metadata';
                 if (!f.edited) f.name = build(f.info, $('#tpl').value, sep);
@@ -250,13 +258,16 @@ async function run() {
                 if (cancelled) {
                     f.st = 'queued';
                     f.note = '';
+                    f.error = false;
                 } else {
                     f.st = 'error';
                     f.note = e.message;
+                    f.error = true;
                     if (!halt) {
                         halt = true;
                         haltFile = f;
-                        $('#errmsg').textContent = f.original + ': ' + e.message;
+                        $('#errmsg').textContent =
+                            'Processing stopped at "' + f.original + '". The specific error is shown next to that file in the list below.';
                         const box = $('#err');
                         box.hidden = false;
                         box.focus();
@@ -284,6 +295,7 @@ function skipAndResume() {
     if (haltFile) {
         haltFile.st = 'skipped';
         haltFile.note = haltFile.note ? haltFile.note + ' (skipped)' : 'Skipped after error';
+        haltFile.error = false;
         paint(haltFile);
         haltFile = null;
     }
@@ -295,6 +307,7 @@ function retryFailed() {
         if (f.st === 'error') {
             f.st = 'queued';
             f.note = '';
+            f.error = false;
             paint(f);
         }
     });
@@ -322,8 +335,8 @@ async function renameAll() {
     if (!window.confirm('Rename ' + todo.length + ' file' + plural + ' in ' + where + '?')) return;
 
     const results = await api.rename(todo.map((p) => ({ id: p.id, from: p.from, to: p.path })));
-    const entries = [],
-        failed = [];
+    const entries = [];
+    let failed = 0;
     for (const r of results) {
         const p = todo.find((x) => x.id === r.id),
             f = files.find((x) => x.id === r.id);
@@ -335,15 +348,18 @@ async function renameAll() {
             f.original = p.target;
             f.renamed = true;
             f.note = '';
+            f.error = false;
         } else {
-            failed.push(f.original + ': ' + r.error);
+            failed++;
             f.note = r.error;
+            f.error = true;
         }
     }
     if (entries.length) undoStack.push({ entries });
-    $('#msg').textContent =
-        (entries.length ? 'Renamed ' + entries.length + ' file' + (entries.length === 1 ? '' : 's') + '.' : '') +
-        (failed.length ? ' Failed: ' + failed.join('; ') : '');
+    const notes = [];
+    if (entries.length) notes.push('Renamed ' + entries.length + ' file' + (entries.length === 1 ? '' : 's') + '.');
+    if (failed) notes.push(failed + ' could not be renamed; see the error next to each file below.');
+    $('#msg').textContent = notes.join(' ') || 'Nothing was renamed.';
     files.forEach(paint);
     sync();
 }
@@ -368,8 +384,10 @@ async function undoLast() {
             f.original = Rename.baseOf(p.to);
             f.renamed = false;
             f.note = '';
+            f.error = false;
         } else {
             f.note = r.error;
+            f.error = true;
         }
     }
     // Anything that could not be moved back stays on the stack for another attempt.
@@ -379,7 +397,7 @@ async function undoLast() {
     const blocked = plan.filter((p) => !p.ok);
     const notes = [];
     if (restored) notes.push('Restored ' + restored + ' original name' + (restored === 1 ? '' : 's') + '.');
-    if (failedIds.length) notes.push(failedIds.length + ' could not be restored.');
+    if (failedIds.length) notes.push(failedIds.length + ' could not be restored; see the error next to each file below.');
     if (blocked.length) notes.push(blocked.length + ' skipped: the original name is taken or the file is gone.');
     if (!notes.length) notes.push('Nothing to undo.');
     $('#msg').textContent = notes.join(' ');
@@ -615,6 +633,16 @@ window.Exporter.init({
 const paint = (f) => Table.paint(f);
 const hints = () => Table.hints();
 const renderUsage = () => Table.renderUsage();
+
+// Retry notices arrive from the main process while a row is still working, so the
+// wait for a rate limit or a slow provider is explained instead of looking stuck.
+api.onAnalyzeStatus(({ id, message }) => {
+    const f = files.find((x) => x.id === id);
+    if (!f || f.st !== 'working') return;
+    f.note = message;
+    paint(f);
+    hints();
+});
 
 Thumbs.init({
     api,
