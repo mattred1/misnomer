@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "generatedAt": "2026-10-19T11:32:47.754Z",
+    "generatedAt": "2026-10-26T11:51:08.908Z",
     "source": {
         "name": "LiteLLM",
         "url": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
@@ -822,6 +822,10 @@
                 "input": 1.4,
                 "output": 4.4
             },
+            "zai-glm-5-3-flash": {
+                "input": 0.15,
+                "output": 0.5
+            },
             "zai-glm-latest": {
                 "input": 1.4,
                 "output": 4.4
@@ -1337,6 +1341,10 @@
             "minimaxai/minimax-m3": {
                 "input": 0.3,
                 "output": 1.2
+            },
+            "minimaxai/minimax-m3.1-flash": {
+                "input": 0.15,
+                "output": 0.6
             },
             "mistralai/ministral-3-14b-instruct-2512": {
                 "input": 0.2,
