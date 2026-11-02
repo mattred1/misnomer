@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "generatedAt": "2026-10-26T11:51:08.908Z",
+    "generatedAt": "2026-11-02T14:10:40.360Z",
     "source": {
         "name": "LiteLLM",
         "url": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
@@ -642,6 +642,10 @@
                 "input": 0.25,
                 "output": 0.25
             },
+            "deepseek-v4-1-flash-1017": {
+                "input": 0.3,
+                "output": 1.2
+            },
             "devstral-latest": {
                 "input": 0.4,
                 "output": 2
@@ -731,12 +735,12 @@
                 "output": 1.5
             },
             "mistral-large-4": {
-                "input": 0.68,
-                "output": 2.09
+                "input": 1.36,
+                "output": 4.18
             },
             "mistral-large-4-0": {
-                "input": 0.68,
-                "output": 2.09
+                "input": 1.36,
+                "output": 4.18
             },
             "mistral-large-latest": {
                 "input": 0.5,
@@ -1144,9 +1148,17 @@
                 "input": 10,
                 "output": 50
             },
+            "gpt-6-astra-law": {
+                "input": 10,
+                "output": 50
+            },
             "gpt-6-luna": {
                 "input": 0.1,
                 "output": 0.5
+            },
+            "gpt-6-rosalind": {
+                "input": 15,
+                "output": 75
             },
             "gpt-6-sol": {
                 "input": 2,
@@ -1155,6 +1167,10 @@
             "gpt-6.1-sol": {
                 "input": 2,
                 "output": 10
+            },
+            "gpt-6.1-terra": {
+                "input": 1,
+                "output": 5
             },
             "gpt-audio": {
                 "input": 2.5,
