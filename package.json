@@ -1,7 +1,7 @@
 {
     "name": "misnomer",
     "productName": "Misnomer",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Renames PDFs and images based on their content",
     "main": "main.js",
     "scripts": {
