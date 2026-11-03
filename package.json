@@ -6,8 +6,8 @@
     "main": "main.js",
     "scripts": {
         "start": "electron .",
-        "dist": "electron-builder --mac --publish never",
-        "dist:all": "electron-builder --mac --x64 --arm64 --publish never",
+        "dist": "electron-builder --mac --publish never -c.mac.identity=-",
+        "dist:all": "electron-builder --mac --x64 --arm64 --publish never -c.mac.identity=-",
         "dist:signed": "electron-builder --mac --publish never -c.mac.notarize=true",
         "dist:signed:all": "electron-builder --mac --x64 --arm64 --publish never -c.mac.notarize=true",
         "test": "node --test",

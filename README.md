@@ -6,6 +6,8 @@ Drop in a batch of documents and images, pick a naming template, and the app rea
 
 Everything runs locally except the files you send to a cloud model. Your API key is stored encrypted in the OS keychain via Electron's `safeStorage`, never in plain text.
 
+![Misnomer batch screen with a naming template, live preview, and drop zone](docs/screenshot.png)
+
 ---
 
 ## Current features
@@ -27,7 +29,7 @@ Everything runs locally except the files you send to a cloud model. Your API key
 - **Presets** — save and switch between template + separator + date format + instructions + fields combinations.
 - **Safe output** — duplicate names within a batch are auto-suffixed (`-2`, `-3`) and illegal filename characters are stripped.
 - **Export** — save a copy of a single row, or export the whole batch as a ZIP. Large exports stream from disk with live progress and a **Cancel ZIP** button.
-- **Auto-update** — the packaged app checks GitHub Releases on launch, downloads a new version in the background, and offers a restart when it is ready. Requires a signed, notarized build.
+- **Auto-update** — the packaged app checks GitHub Releases on launch, downloads a new version in the background, and offers a restart when it is ready. Installing an update requires a signed, notarized build; unsigned builds can only be updated by downloading a new DMG.
 - **In-place rename** — rename files where they live. Collisions are resolved against what is already in each folder, so nothing is overwritten.
 - **EXIF capture-date fallback** — when a photo has no visible date, the capture date written by the camera is read from EXIF metadata and formatted with your chosen date format.
 - **Thumbnail previews** — every image and PDF row shows a thumbnail of its first page, generated only when the row scrolls into view and cached for reuse. Hover for the original filename, and click or press Enter for a larger view; text and Office rows show a file-type badge.
@@ -200,7 +202,21 @@ npm run dist       # current architecture
 npm run dist:all   # Intel + Apple Silicon
 ```
 
-These produce DMG and ZIP artifacts plus `latest-mac.yml` in `dist/`. The ZIP and `latest-mac.yml` are what `electron-updater` consumes; the DMG remains the manual install. Local builds are unsigned unless signing credentials are present, so Gatekeeper may warn first-time users and auto-update will not install.
+These produce DMG and ZIP artifacts plus `latest-mac.yml` in `dist/`. The ZIP and `latest-mac.yml` are what `electron-updater` consumes; the DMG remains the manual install.
+
+Both scripts build an unsigned app that is **ad-hoc signed** (`-c.mac.identity=-`), which is the minimum for Apple Silicon builds to launch. That is enough to publish a working release without an Apple Developer account, with two caveats: Gatekeeper quarantines the download on first launch, and auto-update cannot install because macOS requires a Developer ID signature.
+
+### Installing an unsigned build
+
+1. Open the DMG and drag **Misnomer** into **Applications**.
+2. The first launch is blocked. Open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway** (or right-click the app and choose **Open**).
+3. If macOS instead reports that the app "is damaged and can't be opened", the quarantine flag is still set. Clear it with:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Misnomer.app
+```
+
+To update, download the newer DMG and replace the app. Settings shows _This build is not signed, so macOS cannot install updates_ when the updater finds a release it cannot apply.
 
 ### Signed and notarized builds
 
@@ -217,14 +233,28 @@ Add these secrets under **Settings → Secrets and variables → Actions**:
 | `APPLE_API_ISSUER` | App Store Connect issuer ID                                  |
 | `APPLE_TEAM_ID`    | 10-character Apple Developer team ID                         |
 
-Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds an unsigned DMG and ZIP when signing credentials are absent and a signed, notarized pair when they are present, then verifies the signature and stapling ticket before uploading.
+Alternatively, use `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` instead of the API-key secrets. The release workflow builds the ad-hoc signed pair when signing credentials are absent and a signed, notarized pair when they are present, then verifies the signature and stapling ticket before uploading.
 
-To publish a release:
+### Publishing a release
 
-1. Run `npm version patch` (or `minor` / `major`).
-2. Push the commit and tag with `git push --follow-tags`.
-3. The `CI` workflow tests the tag, builds Intel and Apple Silicon DMGs and ZIPs on macOS, signs and notarizes when secrets are configured, and attaches the artifacts plus `latest-mac.yml` to the GitHub release.
-4. Installed apps discover the new release through `electron-updater`. The first updater-enabled release must be installed manually.
+The `CI` workflow does the whole release: it tests the tag, builds Intel and Apple Silicon DMGs and ZIPs on macOS, signs and notarizes when the Apple secrets are configured, and attaches the artifacts plus `latest-mac.yml` to a GitHub release. Without those secrets the tag still publishes the ad-hoc signed build described above, so an Apple Developer account is optional.
+
+1. Make sure the tree is clean and the checks pass locally (`npm test && npm run lint`).
+2. Bump the version and create the tag: `npm version patch` (or `minor` / `major`).
+3. Push it: `git push --follow-tags`.
+4. Watch the run: `gh run watch` (one-time `gh auth login` first).
+5. Open the published release: `gh release view v1.0.0 --web`.
+
+The release carries `Misnomer-<version>-arm64.dmg`, `Misnomer-<version>-x64.dmg`, the matching ZIPs used by the updater, `latest-mac.yml`, and the `.blockmap` files. To review a release before it goes public, add `draft: true` to the `softprops/action-gh-release` step and publish the draft afterwards.
+
+To publish a locally built copy instead of using CI:
+
+```bash
+npm run dist:all
+gh release create v1.0.0 --generate-notes dist/*.dmg dist/*.zip dist/latest-mac.yml dist/*.blockmap
+```
+
+Add `--prerelease` while a build is still being shaken out. Installed apps discover releases through `electron-updater`; the first updater-enabled release must be installed manually.
 
 For a local signed build, export the same environment variables and run:
 
@@ -282,64 +312,6 @@ eslint.config.js       ESLint flat config
 ```
 
 The renderer has no Node access (`contextIsolation: true`, `nodeIntegration: false`); it talks to the main process only through the narrow `window.api` bridge.
-
----
-
-## Roadmap / TODO
-
-Ordered so that each tier is safe to build on the previous one. Tier 1 items are low-risk and fix active failure modes; Tier 2 delivers the biggest user-visible wins; Tier 3 is polish and distribution.
-
-### Tier 1 — Foundation
-
-- [x] **Extract naming logic into a testable module** — `renderer/naming.js`, loaded as a UMD script so Node can also `require` it
-- [x] **Add unit tests** for every pure module using the built-in `node --test` runner (110 tests, zero new runtime dependencies)
-- [x] **Add ESLint + Prettier** with `lint` and `format` npm scripts
-- [x] **Add a LICENSE file** (MIT)
-- [ ] **Add a screenshot/GIF** of the UI to this README — needs a capture from a running instance
-- [x] **Support more image formats** — WebP natively, plus BMP/ICO/SVG/AVIF via in-app JPEG conversion
-- [x] **Report rejected files** instead of skipping unsupported extensions silently
-- [x] **Retry failed files individually** with a **Retry failed** button
-- [x] **Retry with exponential backoff** (and jitter) on HTTP 429/5xx, up to 3 attempts
-- [x] **Windows-safe filenames** — reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) are prefixed, and trailing dots/spaces are stripped
-- [x] **Length guard** — base names are capped at 120 characters without leaving a trailing dot or space
-
-### Tier 2 — Capability
-
-- [x] **Text-based formats** — `.txt`, `.md`, `.csv`, `.json`, and friends are read as UTF-8 and sent in the prompt
-- [x] **Office formats via the existing `jszip` dependency** — `.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` are unzipped and their XML parts reduced to text
-- [x] **HTML/XML/RTF** — markup is stripped to readable text, with `<script>`/`<style>`/`<head>` contents discarded
-- [x] **TIFF and HEIC/HEIF support** via macOS `sips` — Chromium cannot decode these, so the canvas conversion path can't reach them
-- [x] **Arbitrary template fields** — user-defined placeholders such as `{amount}` or `{category}`, with the request schema and prompt generated to match
-- [x] **Template preview + validation** — shows the resulting filename and flags unknown `{placeholders}`
-- [x] **Progress indicator and cancel** — a "3 of 20" counter plus a Cancel button that aborts the in-flight request
-- [x] **True in-place rename** with `fs.rename`, preserving the source folder, plus collision handling
-- [x] **Folder drag-and-drop** (recursive) — dropped folders and **Choose a folder…** are walked asynchronously by the main process
-- [x] **Undo** — a session stack of rename batches, replayed in reverse with conflicts reported
-
-### Tier 3 — Polish and distribution
-
-- [x] **Disk-aware dedupe** — renames consult the target folder, so an existing file is never overwritten (exported copies still go through the OS save dialog)
-- [x] **EXIF capture-date fallback** for photos with no visible date
-- [x] **Thumbnail previews** in the results table
-- [x] **Lazy thumbnail generation** — only rows near the viewport decode, three at a time, then cache
-- [x] **Keyboard and screen-reader basics** — focus rings, keyboard-operable drop zone and previews, labelled dialogs, live status announcements, and a focus trap that restores focus when dialogs close
-- [x] **Responsive filesystem work** — folder scans, file reads, saves, and `sips` conversion no longer block the main thread
-- [x] **Token and cost estimates** — input/output tokens for every engine, plus estimated USD cost for models in the built-in price table; local runs show no API cost
-- [x] **Automated pricing refresh** — a weekly GitHub Action regenerates `pricing/pricing.json` from the LiteLLM dataset, validates it, and opens a PR
-- [x] **ZIP export progress** — archives stream from disk in the main process, with live progress, screen-reader announcements, and cancellation
-- [x] **Split `renderer/app.js`** into focused modules for the table, thumbnails, template preview, and settings
-- [x] **Keyboard shortcuts** — Cmd/Ctrl shortcuts for settings, adding files, generating names, undoing a rename, and cancelling a batch, documented in the README
-- [ ] **Export/import presets and settings** to JSON for sharing and version control
-- [ ] **Dedupe files already in the batch** — dropping the same folder twice currently adds duplicate rows
-- [ ] **Code signing + notarization** for the macOS DMG — the CI build and electron-builder configuration are ready; add Apple Developer secrets to enable notarized releases
-- [ ] **Windows and Linux build targets**
-- [x] **Auto-update** via `electron-updater` — checks GitHub Releases on launch, downloads in the background, and prompts to restart
-- [x] **GitHub Actions CI** — lint, format check, and tests on PRs; macOS builds on version tags, with signed releases when Apple secrets are configured
-- [ ] **Internationalization** of the prompt and UI
-- [ ] **Headless CLI / watch-folder mode** for scripting and scheduled runs
-- [ ] **Configurable concurrency** — the worker count is hardcoded (1 local, 2 cloud); expose local/cloud concurrency in Settings and adapt to provider rate limits
-
----
 
 ## License
 
